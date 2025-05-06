@@ -139,42 +139,138 @@ def filter_test_cases(test_cases_dict: dict, include: list = None, exclude: list
     return filtered
 
 
-def build_linked_list(test_cases_data: dict, modules_data: dict) -> TestCaseNode:
-    """Build a nested singly linked list from test cases and modules."""
+def get_execution_queue(test_cases_data: dict, test_case_name="", case_setup_teardown: bool = True) -> dict:
+    """
+    Build and return the execution queue as a dictionary, handling setup/teardown.
+
+    :param test_cases_data: Dictionary of test case names and their steps.
+    :param test_case_name: Optional specific test case name or list of names.
+    :param case_setup_teardown: Whether to include per-test setup/teardown.
+    :return: Ordered dictionary of test cases and their steps.
+    """
+    suite_setup = None
+    suite_teardown = None
+    setup = None
+    teardown = None
+    regular_test_cases = {}
+
+    test_case_name_list = (
+        [test_case_name.strip().lower()] if isinstance(test_case_name, str) and test_case_name.strip()
+        else [tc.strip().lower() for tc in test_case_name] if isinstance(test_case_name, list) and test_case_name
+        else None
+    )
+
+    for name, steps in test_cases_data.items():
+        lname = name.lower()
+        if "suite" in lname and "setup" in lname:
+            suite_setup = (name, steps)
+        elif "suite" in lname and "teardown" in lname:
+            suite_teardown = (name, steps)
+        elif "setup" in lname and "suite" not in lname and not setup:
+            setup = (name, steps)
+        elif "teardown" in lname and "suite" not in lname and not teardown:
+            teardown = (name, steps)
+        else:
+            regular_test_cases[name] = steps
+
+    execution_dict = {}
+    if test_case_name_list:
+        matched_cases = {
+            name: steps for name, steps in regular_test_cases.items()
+            if name.lower() in test_case_name_list
+        }
+        if not matched_cases:
+            raise ValueError(
+                f"None of the specified test cases found: {test_case_name}")
+        if suite_setup:
+            execution_dict[suite_setup[0]] = suite_setup[1]
+        for name, steps in matched_cases.items():
+            if case_setup_teardown and setup:
+                execution_dict[setup[0]] = setup[1]
+            execution_dict[name] = steps
+            if case_setup_teardown and teardown:
+                execution_dict[teardown[0]] = teardown[1]
+        if suite_teardown:
+            execution_dict[suite_teardown[0]] = suite_teardown[1]
+    else:
+        if suite_setup:
+            execution_dict[suite_setup[0]] = suite_setup[1]
+        for name, steps in regular_test_cases.items():
+            if case_setup_teardown and setup:
+                execution_dict[setup[0]] = setup[1]
+            execution_dict[name] = steps
+            if case_setup_teardown and teardown:
+                execution_dict[teardown[0]] = teardown[1]
+        if suite_teardown:
+            execution_dict[suite_teardown[0]] = suite_teardown[1]
+
+    return execution_dict
+
+def build_linked_list(
+    test_cases_data: dict,
+    modules_data: dict,
+    test_case_name="",
+    case_setup_teardown: bool = True
+) -> TestCaseNode:
+    """
+    Build a linked list in the correct test execution order with setup/teardown logic.
+    
+    :param test_cases_data: Dictionary of test case names and their module steps.
+    :param modules_data: Dictionary of module names and their keywords.
+    :param test_case_name: Optional specific test case name or list of names.
+    :param case_setup_teardown: Whether to include per-test setup/teardown.
+    :return: Head of the linked list of test cases.
+    """
+    # Step 1: Get the ordered execution dict using the logic from the earlier function
+    execution_dict = get_execution_queue(
+        test_cases_data,
+        test_case_name=test_case_name,
+        case_setup_teardown=case_setup_teardown
+    )
+
+    # Step 2: Build the linked list based on execution_dict
     head = None
-    prev = None
-    for tc_name, modules in test_cases_data.items():
+    prev_tc = None
+
+    for tc_name, modules in execution_dict.items():
         tc_node = TestCaseNode(name=tc_name)
         if not head:
             head = tc_node
-        if prev:
-            prev.next = tc_node
-        prev = tc_node
+        if prev_tc:
+            prev_tc.next = tc_node
+        prev_tc = tc_node
 
         module_head = None
-        module_prev = None
+        prev_module = None
+
         for module_name in modules:
             module_node = ModuleNode(name=module_name)
             if not module_head:
                 module_head = module_node
-            if module_prev:
-                module_prev.next = module_node
-            module_prev = module_node
+            if prev_module:
+                prev_module.next = module_node
+            prev_module = module_node
 
             keyword_head = None
-            keyword_prev = None
+            prev_keyword = None
+
             for keyword, params in modules_data.get(module_name, []):
                 keyword_node = KeywordNode(name=keyword, params=params)
                 if not keyword_head:
                     keyword_head = keyword_node
-                if keyword_prev:
-                    keyword_prev.next = keyword_node
-                keyword_prev = keyword_node
+                if prev_keyword:
+                    prev_keyword.next = keyword_node
+                prev_keyword = keyword_node
+
             module_node.keywords_head = keyword_head
+
         tc_node.modules_head = module_head
+
     if not head:
         raise ValueError("No test cases found to build linked list")
+
     return head
+
 
 
 class RunnerArgs(BaseModel):
@@ -210,7 +306,7 @@ class BaseRunner:
 
     def __init__(self, args: RunnerArgs):
         self.folder_path = args.folder_path
-        self.test_name = args.test_name
+        # self.test_name = args.test_name
         self.runner = args.runner
         internal_logger.debug(f"Using runner: {self.runner}")
 
@@ -287,7 +383,6 @@ class BaseRunner:
             params = ExecutionParams(
                 session_id=self.session_id,
                 mode=mode,
-                test_case=self.test_name if self.test_name else None,
                 test_cases=self.execution_queue,
                 modules=self.modules_data,
                 elements=ElementData(elements=self.elements_data),
