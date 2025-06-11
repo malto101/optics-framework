@@ -16,7 +16,7 @@
 		"--add-host=host.docker.internal:host-gateway"
 	],
 	"postCreateCommand": "poetry install && poetry run pre-commit install",
-	"initializeCommand": "poetry env use python && source $(poetry env info --path)/bin/activate",
+	"initializeCommand": "/usr/local/bin/poetry env use python && . $(/usr/local/bin/poetry env info --path)/bin/activate",
 	"customizations": {
 		"vscode": {
 			"extensions": [
