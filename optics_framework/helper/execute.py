@@ -19,6 +19,7 @@ from optics_framework.common.models import (
     ModuleNode,
     KeywordNode,
     ElementData,
+    APIData,
 )
 
 
@@ -85,23 +86,14 @@ def _identify_yaml_content(data: Dict) -> Set[str]:
 
 
 def identify_file_content(file_path: str) -> Set[str]:
-    """
-    Identify the content type of a file based on its headers (CSV) or keys (YAML).
-
-    :param file_path: Path to the file.
-    :return: Set of content types ('test_cases', 'modules', 'elements').
-    """
-    try:
-        if file_path.endswith(".csv"):
-            headers = read_csv_headers(file_path)
-            return _identify_csv_content(headers)
-        else:  # YAML file
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-            return _identify_yaml_content(data)
-    except Exception as e:
-        internal_logger.exception(f"Error reading {file_path}: {e}")
-        return set()
+    if file_path.endswith(".csv"):
+        headers = read_csv_headers(file_path)
+        return _identify_csv_content(headers)
+    elif file_path.endswith(".yaml") or file_path.endswith(".yml"):
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return _identify_yaml_content(data)
+    return set()
 
 
 def read_csv_headers(file_path: str) -> Optional[Set[str]]:
@@ -401,11 +393,24 @@ class BaseRunner:
             self.modules_data = merge_dicts(self.modules_data, modules, "modules")
 
         # Read and merge elements
-        self.elements_data = {}
+        elements_dict = {}
         for file_path in element_files:
             reader = csv_reader if file_path.endswith(".csv") else yaml_reader
             elements = reader.read_elements(file_path)
-            self.elements_data = merge_dicts(self.elements_data, elements, "elements")
+            elements_dict = merge_dicts(elements_dict, elements, "elements")
+
+        # Read API collections
+        api_files = [
+            f for f in os.listdir(self.folder_path) if f.endswith("api_collection.yaml")
+        ]
+        api_data = APIData()
+        for file_path in api_files:
+            api_data_part = yaml_reader.read_api_collections(
+                os.path.join(self.folder_path, file_path)
+            )
+            api_data.api = {**api_data.api, **api_data_part.api}
+        # Create ElementData with elements and api_data
+        self.elements_data = ElementData(elements=elements_dict, api_data=api_data)
 
         if not self.test_cases_data:
             internal_logger.debug(f"No test cases found in {test_case_files}")
@@ -458,7 +463,7 @@ class BaseRunner:
                 mode=mode,
                 test_cases=self.execution_queue,
                 modules=self.modules_data,
-                elements=ElementData(elements=self.elements_data),
+                elements=self.elements_data,
                 runner_type=self.runner,
                 use_printer=self.use_printer,
             )

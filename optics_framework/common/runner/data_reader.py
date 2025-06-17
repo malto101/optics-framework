@@ -4,6 +4,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Union, List, Tuple
 from optics_framework.common.logging_config import internal_logger
+from optics_framework.common.models import APIData, APICollection
 
 
 class DataReader(ABC):
@@ -303,6 +304,14 @@ class YAMLDataReader(DataReader):
                 elements[name] = value
         return elements
 
+    def read_api_collections(self, file_path: str) -> APIData:
+        data = self.read_file(file_path)
+        api_data = data.get("api", {})
+        api_collections = {
+            key: APICollection(**value) for key, value in api_data.items()
+        }
+        return APIData(api=api_collections)
+
 
 def merge_dicts(dict1: Dict, dict2: Dict, data_type: str) -> Dict:
     """
@@ -317,6 +326,7 @@ def merge_dicts(dict1: Dict, dict2: Dict, data_type: str) -> Dict:
     for key, value in dict2.items():
         if key in merged:
             internal_logger.warning(
-                f"Duplicate {data_type} key '{key}' found. Keeping value from second source.")
+                f"Duplicate {data_type} key '{key}' found. Keeping value from second source."
+            )
         merged[key] = value
     return merged

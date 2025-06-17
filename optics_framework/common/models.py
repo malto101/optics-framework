@@ -1,6 +1,6 @@
 from uuid import uuid4
 from enum import Enum
-from typing import Optional, Dict, List, Callable
+from typing import Optional, Dict, Any, List, Callable
 from pydantic import BaseModel, Field
 
 # State Enum
@@ -38,7 +38,38 @@ class TestCaseNode(Node):
     modules_head: Optional[ModuleNode] = None
     next: Optional['TestCaseNode'] = None
 
-# Data Models
+
+class RequestConfig(BaseModel):
+    method: str
+    query_params: Optional[Dict[str, str]] = None
+    headers: Optional[Dict[str, str]] = None
+    body: Optional[Dict[str, Any]] = None
+
+
+class ExpectedResult(BaseModel):
+    expected_status: int
+    expected_json: Optional[Dict[str, Any]] = None
+    extract: Optional[Dict[str, str]] = None
+
+
+class ErrorHandling(BaseModel):
+    retry: int = 1
+    timeout: int = 5000
+
+
+class APICollection(BaseModel):
+    name: str
+    description: str
+    endpoint: str
+    request: RequestConfig
+    expected_result: Optional[ExpectedResult] = None
+    error_handling: Optional[ErrorHandling] = None
+
+
+class APIData(BaseModel):
+    api: Dict[str, APICollection] = Field(default_factory=dict)
+
+
 class ElementData(BaseModel):
-    """Structure for elements."""
     elements: Dict[str, str] = Field(default_factory=dict)
+    api_data: APIData = Field(default_factory=APIData)
