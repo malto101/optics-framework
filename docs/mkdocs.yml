@@ -1,0 +1,41 @@
+site_name: Optics Framework Documentation
+repo_name: Optics Framework
+repo_url: https://github.com/mozarkai/optics-framework
+edit_uri: https://github.com/mozarkai/optics-framework/blob/main/docs/en
+site_description: Documentation for the Optics Framework, a Python framework for testing Mobile/Browser/Web applications.
+docs_dir: en
+theme:
+  name: material
+  palette:
+    - media: '(prefers-color-scheme)'
+      scheme: default
+      primary: indigo
+      accent: indigo
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      primary: indigo
+      accent: indigo
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      primary: indigo
+      accent: indigo
+  features:
+    - content.action.edit
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - toc.follow
+    - navigation.instant
+    - navigation.expand
+    - navigation.tracking
+
+
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
