@@ -1,18 +1,38 @@
 from typing import Optional, Dict, List, Any
 from optics_framework.common.logging_config import internal_logger
-from optics_framework.common.config_handler import ConfigHandler,DependencyConfig
+from optics_framework.common.config_handler import ConfigHandler, DependencyConfig
 from optics_framework.common.session_manager import SessionManager
 from optics_framework.api.app_management import AppManagement
 from optics_framework.api.action_keyword import ActionKeyword
 from optics_framework.api.verifier import Verifier
 from optics_framework.common.optics_builder import OpticsBuilder
 
+# Conditionally import Robot Framework's keyword decorator
+try:
+    from robot.api.deco import keyword, library
+except ImportError:
+    # Fallback no-op definitions if Robot Framework is not installed
+    def keyword(name=None):
+        if callable(name):
+            return name
+        else:
+            def decorator(func):
+                return func
+            return decorator
+
+    def library(scope=None):
+        def decorator(cls):
+            return cls
+        return decorator
+
 INVALID_SETUP = "Setup not complete. Call setup() first."
 
+@library(scope="GLOBAL")
 class Optics:
     """
     A lightweight interface to interact with the Optics Framework.
     Provides direct access to app management, action, and verification keywords with a single setup method.
+    Supports Robot Framework as a library when Robot Framework is installed.
     """
 
     def __init__(self):
@@ -93,6 +113,7 @@ class Optics:
             internal_logger.error(f"Failed to configure {config_type} in OpticsBuilder: {e}")
             raise ValueError(f"Failed to configure {config_type} in OpticsBuilder: {e}")
 
+    @keyword
     def setup(
         self,
         driver_config: List[Dict[str, Dict[str, Any]]],
@@ -143,27 +164,31 @@ class Optics:
             self.session_id = self.session_manager.create_session(self.config)
         except Exception as e:
             internal_logger.error(f"Failed to create session: {e}")
-
+            raise ValueError(f"Failed to create session: {e}") from e
 
     ### AppManagement Methods ###
+    @keyword
     def launch_app(self, event_name: Optional[str] = None) -> None:
         """Launch the application."""
         if not self.app_management:
             raise ValueError(INVALID_SETUP)
         self.app_management.launch_app(event_name)
 
+    @keyword
     def start_appium_session(self, event_name: Optional[str] = None) -> None:
         """Start an Appium session."""
         if not self.app_management:
             raise ValueError(INVALID_SETUP)
         self.app_management.start_appium_session(event_name)
 
-    def close_and_terminate_app(self, package_name: Optional[str] = None, event_name: Optional[str] = None) -> None:
+    @keyword
+    def close_and_terminate_app(self) -> None:
         """Close and terminate an application."""
         if not self.app_management:
             raise ValueError(INVALID_SETUP)
-        self.app_management.close_and_terminate_app(package_name, event_name)
+        self.app_management.close_and_terminate_app()
 
+    @keyword
     def get_app_version(self) -> Optional[str]:
         """Get the application version."""
         if not self.app_management:
@@ -171,114 +196,133 @@ class Optics:
         return self.app_management.get_app_version()
 
     ### ActionKeyword Methods ###
+    @keyword
     def press_element(self, element: str, repeat: int = 1, offset_x: int = 0, offset_y: int = 0, event_name: Optional[str] = None) -> None:
         """Press an element with specified parameters."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.press_element(element, repeat, offset_x, offset_y, event_name)
 
+    @keyword
     def press_by_percentage(self, percent_x: int, percent_y: int, repeat: int = 1, event_name: Optional[str] = None) -> None:
         """Press at percentage coordinates."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.press_by_percentage(percent_x, percent_y, repeat, event_name)
 
+    @keyword
     def press_by_coordinates(self, coor_x: int, coor_y: int, repeat: int = 1, event_name: Optional[str] = None) -> None:
         """Press at absolute coordinates."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.press_by_coordinates(coor_x, coor_y, repeat, event_name)
 
+    @keyword
     def press_element_with_index(self, element: str, index: int = 0, event_name: Optional[str] = None) -> None:
         """Press an element at a specific index."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.press_element_with_index(element, index, event_name)
 
+    @keyword
     def detect_and_press(self, element: str, timeout: int = 10, event_name: Optional[str] = None) -> None:
         """Detect and press an element."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.detect_and_press(element, timeout, event_name)
 
+    @keyword
     def swipe(self, coor_x: int, coor_y: int, direction: str = 'right', swipe_length: int = 50, event_name: Optional[str] = None) -> None:
         """Perform a swipe gesture."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.swipe(coor_x, coor_y, direction, swipe_length, event_name)
 
+    @keyword
     def swipe_until_element_appears(self, element: str, direction: str = 'down', timeout: int = 30, event_name: Optional[str] = None) -> None:
         """Swipe until an element appears."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.swipe_until_element_appears(element, direction, timeout, event_name)
 
+    @keyword
     def swipe_from_element(self, element: str, direction: str = 'right', swipe_length: int = 50, event_name: Optional[str] = None) -> None:
         """Swipe starting from an element."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.swipe_from_element(element, direction, swipe_length, event_name)
 
+    @keyword
     def scroll(self, direction: str = 'down', event_name: Optional[str] = None) -> None:
         """Perform a scroll gesture."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.scroll(direction, event_name)
 
+    @keyword
     def scroll_until_element_appears(self, element: str, direction: str = 'down', timeout: int = 30, event_name: Optional[str] = None) -> None:
         """Scroll until an element appears."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.scroll_until_element_appears(element, direction, timeout, event_name)
 
+    @keyword
     def scroll_from_element(self, element: str, direction: str = 'down', scroll_length: int = 100, event_name: Optional[str] = None) -> None:
         """Scroll starting from an element."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.scroll_from_element(element, direction, scroll_length, event_name)
 
+    @keyword
     def enter_text(self, element: str, text: str, event_name: Optional[str] = None) -> None:
         """Enter text into an element."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.enter_text(element, text, event_name)
 
+    @keyword
     def enter_text_direct(self, text: str, event_name: Optional[str] = None) -> None:
         """Enter text using the keyboard."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.enter_text_direct(text, event_name)
 
+    @keyword
     def enter_text_using_keyboard(self, text_input: str, event_name: Optional[str] = None) -> None:
         """Enter text or press a special key."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.enter_text_using_keyboard(text_input, event_name)
 
+    @keyword
     def enter_number(self, element: str, number: float, event_name: Optional[str] = None) -> None:
         """Enter a number into an element."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.enter_number(element, number, event_name)
 
+    @keyword
     def press_keycode(self, keycode: int, event_name: Optional[str] = None) -> None:
         """Press a keycode."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.press_keycode(keycode, event_name if event_name is not None else "")
 
+    @keyword
     def clear_element_text(self, element: str, event_name: Optional[str] = None) -> None:
         """Clear text from an element."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.clear_element_text(element, event_name)
 
+    @keyword
     def get_text(self, element: str) -> Optional[str]:
         """Get text from an element."""
         if not self.action_keyword:
             raise ValueError(INVALID_SETUP)
         return self.action_keyword.get_text(element)
 
+    @keyword
     def sleep(self, duration: int) -> None:
         """Sleep for a specified duration."""
         if not self.action_keyword:
@@ -286,41 +330,49 @@ class Optics:
         self.action_keyword.sleep(duration)
 
     ### Verifier Methods ###
+    @keyword
     def validate_element(self, element: str, timeout: int = 10, rule: str = "all", event_name: Optional[str] = None) -> None:
         """Validate an element's presence."""
         if not self.verifier:
             raise ValueError(INVALID_SETUP)
         self.verifier.validate_element(element, timeout, rule, event_name)
 
+    @keyword
     def assert_presence(self, elements: str, timeout: int = 30, rule: str = 'any', event_name: Optional[str] = None) -> bool:
         """Assert the presence of elements."""
         if not self.verifier:
             raise ValueError(INVALID_SETUP)
         return self.verifier.assert_presence(elements, timeout, rule, event_name)
 
+    @keyword
     def validate_screen(self, elements: str, timeout: int = 30, rule: str = 'any', event_name: Optional[str] = None) -> None:
         """Validate a screen by checking element presence."""
         if not self.verifier:
             raise ValueError(INVALID_SETUP)
         self.verifier.validate_screen(elements, timeout, rule, event_name)
 
-    def get_interactive_elements(self) -> Dict:
+    @keyword
+    def get_interactive_elements(self) -> List:
+        """Get interactive elements on the screen."""
         if not self.verifier:
             raise ValueError(INVALID_SETUP)
         return self.verifier.get_interactive_elements()
 
+    @keyword
     def capture_screenshot(self):
         """Capture a screenshot of the current screen."""
         if not self.verifier:
             raise ValueError(INVALID_SETUP)
         return self.verifier.capture_screenshot()
 
+    @keyword
     def capture_pagesource(self) -> str:
         """Capture the page source of the current screen."""
         if not self.verifier:
             raise ValueError(INVALID_SETUP)
         return self.verifier.capture_pagesource()
 
+    @keyword
     def quit(self) -> None:
         """Clean up session resources and terminate the session."""
         if self.session_id:
