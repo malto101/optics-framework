@@ -2,8 +2,9 @@ import csv
 import yaml
 import re
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Union, List, Tuple
+from typing import Optional, Dict, Union, List, Tuple, cast
 from optics_framework.common.logging_config import internal_logger
+from optics_framework.common.models import ApiData, ApiDefinition, ExpectedResultDefinition
 
 
 class DataReader(ABC):
@@ -302,6 +303,63 @@ class YAMLDataReader(DataReader):
             if name and value:
                 elements[name] = value
         return elements
+
+    def read_api_data(self, file_path: str, existing_api_data: Optional[ApiData] = None) -> ApiData:
+        """
+        Reads a YAML file containing API definitions and merges it with existing ApiData.
+
+        :param file_path: Path to the YAML file.
+        :type file_path: str
+        :param existing_api_data: Optional existing ApiData object to merge into.
+        :type existing_api_data: Optional[ApiData]
+        :return: An ApiData object representing the merged API definitions.
+        :rtype: ApiData
+        """
+        data = self.read_file(file_path)
+        # Extract the 'api' key if present, otherwise use the whole data
+        api_data_content = data.get('api', data)
+        try:
+            new_api_data = ApiData(**api_data_content)
+            internal_logger.debug(f"YAMLDataReader: New API data parsed: {new_api_data.model_dump_json(indent=2)}")
+            if existing_api_data:
+                internal_logger.debug(f"YAMLDataReader: Existing API data before merge: {existing_api_data.model_dump_json(indent=2)}")
+                # Merge global_defaults
+                if new_api_data.global_defaults:
+                    if not isinstance(existing_api_data.global_defaults, dict):
+                        existing_api_data.global_defaults = {}
+                    existing_api_data.global_defaults.update(new_api_data.global_defaults)
+
+                # Merge collections
+                for collection_name, new_collection_obj in new_api_data.collections.items():
+                    if collection_name in existing_api_data.collections:
+                        existing_collection_obj = existing_api_data.collections[collection_name]
+                        # Merge global_headers
+                        existing_collection_obj.global_headers.update(new_collection_obj.global_headers)
+                        # Merge APIs within existing collection
+                        for api_name, new_api_def in cast(Dict[str, ApiDefinition], new_collection_obj.apis).items():
+                            if api_name in existing_collection_obj.apis:
+                                # Update existing API definition (e.g., extract field)
+                                existing_api_def = existing_collection_obj.apis[api_name]
+                                if new_api_def.expected_result and new_api_def.expected_result.extract:
+                                    if existing_api_def.expected_result is None:
+                                        existing_api_def.expected_result = ExpectedResultDefinition()
+                                    if existing_api_def.expected_result.extract is None:
+                                        existing_api_def.expected_result.extract = {}
+                                    existing_api_def.expected_result.extract.update(new_api_def.expected_result.extract)
+                                # You might need to merge other fields like request, expected_result as well
+                                # For now, focusing on 'extract' as per the problem description
+                            else:
+                                # Add new API definition
+                                existing_collection_obj.apis[api_name] = new_api_def
+                    else:
+                        # Add new collection
+                        existing_api_data.collections[collection_name] = new_collection_obj
+                internal_logger.debug(f"YAMLDataReader: Existing API data after merge: {existing_api_data.model_dump_json(indent=2)}")
+                return existing_api_data
+            return new_api_data
+        except Exception as e:
+            internal_logger.error(f"Error parsing API data from {file_path}: {e}")
+            raise ValueError(f"Invalid API data structure in {file_path}: {e}") from e
 
 
 def merge_dicts(dict1: Dict, dict2: Dict, data_type: str) -> Dict:
