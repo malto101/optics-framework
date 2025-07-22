@@ -179,3 +179,11 @@ cython_debug/
 *.json
 *.log
 .DS_Store
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+GEMINI.md

@@ -1,5 +1,4 @@
 from uuid import uuid4
-import asyncio
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, List
 from pydantic import BaseModel, Field, ConfigDict
@@ -32,7 +31,7 @@ class ExecutionParams(BaseModel):
 class Executor(ABC):
     """Abstract base class for execution strategies."""
     @abstractmethod
-    async def execute(self, session: Session, runner: Runner) -> None:
+    def execute(self, session: Session, runner: Runner) -> None:
         pass
 
 
@@ -42,10 +41,10 @@ class BatchExecutor(Executor):
     def __init__(self, test_case: TestCaseNode):
         self.test_case = test_case
 
-    async def execute(self, session: Session, runner: Runner) -> None:
+    def execute(self, session: Session, runner: Runner) -> None:
         event_manager = get_event_manager()
         if not runner.test_cases:
-            await event_manager.publish_event(Event(
+            event_manager.publish_event(Event(
                 entity_type="execution",
                 entity_id=session.session_id,
                 name="Execution",
@@ -57,12 +56,12 @@ class BatchExecutor(Executor):
 
         try:
             if self.test_case:
-                await runner.run_all()
+                runner.run_all()
                 all_passed = all(
                     tc.status == "PASS" for tc in runner.result_printer.test_state.values())
                 status = EventStatus.PASS if all_passed else EventStatus.FAIL
                 message = "All test cases completed" if all_passed else "Some test cases failed"
-            await event_manager.publish_event(Event(
+            event_manager.publish_event(Event(
                 entity_type="execution",
                 entity_id=session.session_id,
                 name="Execution",
@@ -71,7 +70,7 @@ class BatchExecutor(Executor):
                 extra={"session_id": session.session_id}
             ))
         except Exception as e:
-            await event_manager.publish_event(Event(
+            event_manager.publish_event(Event(
                 entity_type="execution",
                 entity_id=session.session_id,
                 name="Execution",
@@ -88,10 +87,10 @@ class DryRunExecutor(Executor):
     def __init__(self, test_case: TestCaseNode):
         self.test_case = test_case
 
-    async def execute(self, session: Session, runner: Runner) -> None:
+    def execute(self, session: Session, runner: Runner) -> None:
         event_manager = get_event_manager()
         if not runner.test_cases:
-            await event_manager.publish_event(Event(
+            event_manager.publish_event(Event(
                 entity_type="execution",
                 entity_id=session.session_id,
                 name="Execution",
@@ -102,12 +101,12 @@ class DryRunExecutor(Executor):
             raise ValueError("NO_TEST_CASES_LOADED")
 
         if self.test_case:
-            await runner.dry_run_all()
+            runner.dry_run_all()
             all_passed = all(
                 tc.status == "PASS" for tc in runner.result_printer.test_state.values())
             status = EventStatus.PASS if all_passed else EventStatus.FAIL
             message = "All test cases dry run completed"
-        await event_manager.publish_event(Event(
+        event_manager.publish_event(Event(
             entity_type="execution",
             entity_id=session.session_id,
             name="Execution",
@@ -124,12 +123,12 @@ class KeywordExecutor(Executor):
         self.keyword = keyword
         self.params = params
 
-    async def execute(self, session: Session, runner: Runner) -> None:
+    def execute(self, session: Session, runner: Runner) -> None:
         event_manager = get_event_manager()
         method = runner.keyword_map.get("_".join(self.keyword.split()).lower())
         if method:
             result = method(*self.params)
-            await event_manager.publish_event(Event(
+            event_manager.publish_event(Event(
                 entity_type="keyword",
                 entity_id=session.session_id,
                 name=self.keyword,
@@ -139,7 +138,7 @@ class KeywordExecutor(Executor):
             ))
             return result
         else:
-            await event_manager.publish_event(Event(
+            event_manager.publish_event(Event(
                 entity_type="keyword",
                 entity_id=session.session_id,
                 name=self.keyword,
@@ -195,10 +194,10 @@ class ExecutionEngine:
         self.session_manager = session_manager
         self.event_manager = get_event_manager()
 
-    async def execute(self, params: ExecutionParams) -> None:
+    def execute(self, params: ExecutionParams) -> None:
         session = self.session_manager.get_session(params.session_id)
         if not session:
-            await self.event_manager.publish_event(Event(
+            self.event_manager.publish_event(Event(
                 entity_type="session",
                 entity_id=params.session_id,
                 name="Session",
@@ -209,7 +208,7 @@ class ExecutionEngine:
             raise ValueError("Session not found")
 
         if not params.test_cases:
-            await self.event_manager.publish_event(Event(
+            self.event_manager.publish_event(Event(
                 entity_type="execution",
                 entity_id=params.session_id,
                 name="Execution",
@@ -239,7 +238,7 @@ class ExecutionEngine:
                 runner.result_printer.start_live()
 
             try:
-                await self.event_manager.publish_event(Event(
+                self.event_manager.publish_event(Event(
                     entity_type="execution",
                     entity_id=params.session_id,
                     name="Execution",
@@ -253,7 +252,7 @@ class ExecutionEngine:
                     executor = DryRunExecutor(test_case=params.test_cases)
                 elif params.mode == "keyword":
                     if not params.keyword:
-                        await self.event_manager.publish_event(Event(
+                        self.event_manager.publish_event(Event(
                             entity_type="execution",
                             entity_id=params.session_id,
                             name="Execution",
@@ -264,7 +263,7 @@ class ExecutionEngine:
                         raise ValueError("Keyword mode requires a keyword")
                     executor = KeywordExecutor(params.keyword, params.params)
                 else:
-                    await self.event_manager.publish_event(Event(
+                    self.event_manager.publish_event(Event(
                         entity_type="execution",
                         entity_id=params.session_id,
                         name="Execution",
@@ -274,11 +273,11 @@ class ExecutionEngine:
                     ))
                     raise ValueError(f"Unknown mode: {params.mode}")
 
-                result =  await executor.execute(session, runner)
+                result = executor.execute(session, runner)
                 return result
 
             except Exception as e:
-                await self.event_manager.publish_event(Event(
+                self.event_manager.publish_event(Event(
                     entity_type="execution",
                     entity_id=params.session_id,
                     name="Execution",
@@ -288,15 +287,3 @@ class ExecutionEngine:
                 ))
                 internal_logger.error(f"Execution error in session {params.session_id}: {e}")
                 return None
-            finally:
-                if hasattr(runner, 'result_printer') and runner.result_printer:
-                    internal_logger.debug(
-                        "Stopping result printer live display")
-                # Wait for event queue to drain
-                internal_logger.debug(
-                    "Event queue size before drain: %d", self.event_manager.event_queue.qsize())
-                while self.event_manager.event_queue.qsize() > 0:
-                    internal_logger.debug(
-                        "Waiting for %d events to process", self.event_manager.event_queue.qsize())
-                    await asyncio.sleep(0.1)
-                self.event_manager.shutdown()

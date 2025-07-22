@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Union, Optional, Dict, List, Any
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
+from concurrent.futures import ThreadPoolExecutor
 
 internal_logger = logging.getLogger("optics.internal")
 
@@ -87,21 +88,25 @@ class EventManager:
             self._initialized = True
             internal_logger.debug(f"EventManager initialized: {id(self)}")
 
-    def start(self):
+    async def start(self):
         """Start the event processing loop."""
         if not self._running:
             self._running = True
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             internal_logger.debug(f"Event loop running: {loop.is_running()}")
-            self._process_task = asyncio.create_task(self._process_events())
+            self._process_task = loop.create_task(self._process_events())
             internal_logger.debug(
                 f"EventManager started, process_task: {self._process_task}")
 
-    def stop(self):
+    async def stop(self):
         """Stop the event processing loop."""
         self._running = False
         if self._process_task:
             self._process_task.cancel()
+            try:
+                await self._process_task  # Await the task to ensure it's cancelled
+            except asyncio.CancelledError:
+                pass
             self._process_task = None
         internal_logger.debug("EventManager stopped")
 
@@ -180,5 +185,52 @@ class EventManager:
         self.stop()
 
 
-def get_event_manager() -> EventManager:
-    return EventManager()
+# New classes and functions for synchronous wrapper
+class SyncEventManager(EventManager):
+    def __init__(self):
+        self._loop = asyncio.new_event_loop()
+        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._thread = self._executor.submit(self._start_loop)
+        self._event_manager_instance = EventManager()
+
+    def _start_loop(self):
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
+
+    def _run_async_in_thread(self, coro):
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result()
+
+    def start(self):
+        self._run_async_in_thread(self._event_manager_instance.start())
+
+    def stop(self):
+        self._run_async_in_thread(self._event_manager_instance.stop())
+
+    def publish_event(self, event: Event):
+        self._run_async_in_thread(self._event_manager_instance.publish_event(event))
+
+    def publish_command(self, command: CommandType, entity_id: str, params: Optional[List[str]] = None, parent_id: Optional[str] = None):
+        self._run_async_in_thread(self._event_manager_instance.publish_command(command, entity_id, params, parent_id))
+
+    def subscribe(self, subscriber_id: str, subscriber: EventSubscriber):
+        # Subscribers are async, so they need to be handled in the async thread
+        self._run_async_in_thread(self._event_manager_instance.subscribe(subscriber_id, subscriber))
+
+    def unsubscribe(self, subscriber_id: str):
+        self._run_async_in_thread(self._event_manager_instance.unsubscribe(subscriber_id))
+
+    def get_command(self) -> Optional[Command]:
+        return self._run_async_in_thread(self._event_manager_instance.get_command())
+
+    def dump_state(self):
+        self._run_async_in_thread(self._event_manager_instance.dump_state())
+
+    def shutdown(self):
+        self._run_async_in_thread(self._event_manager_instance.shutdown())
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._executor.shutdown(wait=True)
+
+
+def get_event_manager() -> SyncEventManager:
+    return SyncEventManager()

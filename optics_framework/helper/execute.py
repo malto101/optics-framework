@@ -1,6 +1,5 @@
 import os
 import sys
-import asyncio
 from typing import Optional, Tuple, List, Dict, Set
 import yaml
 from pydantic import BaseModel, field_validator
@@ -450,7 +449,7 @@ class BaseRunner:
             self.filtered_test_cases, self.modules_data
         )
 
-    async def run(self, mode: str):
+    def run(self, mode: str):
         """Run the specified mode using ExecutionEngine."""
         try:
             params = ExecutionParams(
@@ -465,7 +464,7 @@ class BaseRunner:
             internal_logger.debug(
                 f"Executing with runner_type: {self.runner}, use_printer: {self.use_printer}"
             )
-            await self.engine.execute(params)
+            self.engine.execute(params)
         except Exception as e:
             internal_logger.error(f"{mode.capitalize()} failed: {e}")
             raise
@@ -481,15 +480,15 @@ class BaseRunner:
 
 
 class ExecuteRunner(BaseRunner):
-    async def execute(self):
+    def execute(self):
         """Execute test cases."""
-        await self.run("batch")
+        self.run("batch")
 
 
 class DryRunRunner(BaseRunner):
-    async def execute(self):
+    def execute(self):
         """Perform dry run of test cases."""
-        await self.run("dry_run")
+        self.run("dry_run")
 
 
 def execute_main(
@@ -498,7 +497,7 @@ def execute_main(
     """Entry point for execute command."""
     args = RunnerArgs(folder_path=folder_path, runner=runner, use_printer=use_printer)
     runner_instance = ExecuteRunner(args)
-    asyncio.run(runner_instance.execute())
+    runner_instance.execute()
 
 
 def dryrun_main(
@@ -507,4 +506,10 @@ def dryrun_main(
     """Entry point for dry run command."""
     args = RunnerArgs(folder_path=folder_path, runner=runner, use_printer=use_printer)
     runner_instance = DryRunRunner(args)
-    asyncio.run(runner_instance.execute())
+    runner_instance.execute()
+
+if __name__ == "__main__":
+    execute_main(
+        "/Users/dhruvmenon/Documents/optics-framework-1/optics_framework/samples/playwright_sample",
+        use_printer=False,
+    )
