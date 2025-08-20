@@ -8,12 +8,15 @@ from optics_framework.common.base_factory import InstanceFallback
 from optics_framework.common import utils
 from .verifier import Verifier
 
+
 # Action Executor Decorator
 def with_self_healing(func: Callable) -> Callable:
     @wraps(func)
     def wrapper(self, element, *args, **kwargs):
         screenshot_np = self.strategy_manager.capture_screenshot()
-        utils.save_screenshot(screenshot_np, func.__name__, output_dir=self.execution_dir)
+        utils.save_screenshot(
+            screenshot_np, func.__name__, output_dir=self.execution_dir
+        )
 
         results = self.strategy_manager.locate(element)
         last_exception = None
@@ -24,18 +27,39 @@ def with_self_healing(func: Callable) -> Callable:
                 return func(self, element, located=result.value, *args, **kwargs)
             except Exception as e:
                 internal_logger.error(
-                    f"Action '{func.__name__}' failed with {result.strategy.__class__.__name__}: {e}")
+                    f"Action '{func.__name__}' failed with {result.strategy.__class__.__name__}: {e}"
+                )
                 last_exception = e
 
+        # Special handling for detect_and_press: never raise, just log and exit gracefully
+        if func.__name__ == "detect_and_press":
+            if result_count == 0:
+                internal_logger.debug(
+                    f"detect_and_press: No valid strategies found for '{element}', skipping press."
+                )
+                return None
+            if last_exception:
+                internal_logger.debug(
+                    f"detect_and_press: All strategies failed for '{element}': {last_exception}, skipping press."
+                )
+                return None
+            internal_logger.debug(
+                f"detect_and_press: Unexpected failure for '{element}', skipping press."
+            )
+            return None
+        # Default: raise as before
         if result_count == 0:
-            # No strategies yielded a result
             raise ValueError(
-                f"No valid strategies found for '{element}' in '{func.__name__}'")
+                f"No valid strategies found for '{element}' in '{func.__name__}'"
+            )
         if last_exception:
             raise ValueError(
-                f"All strategies failed for '{element}' in '{func.__name__}': {last_exception}")
+                f"All strategies failed for '{element}' in '{func.__name__}': {last_exception}"
+            )
         raise ValueError(
-            f"Unexpected failure: No results or exceptions for '{element}' in '{func.__name__}'")
+            f"Unexpected failure: No results or exceptions for '{element}' in '{func.__name__}'"
+        )
+
     return wrapper
 
 
@@ -46,7 +70,10 @@ class ActionKeyword:
     This class provides functionality for managing action keywords related to applications,
     including pressing elements, scrolling, swiping, and text input.
     """
-    SCREENSHOT_DISABLED_MSG = "Screenshot taking is disabled, not possible to locate element."
+
+    SCREENSHOT_DISABLED_MSG = (
+        "Screenshot taking is disabled, not possible to locate element."
+    )
     XPAHT_NOT_SUPPORTED_MSG = "XPath is not supported for vision based search."
 
     def __init__(self, builder: OpticsBuilder):
@@ -60,13 +87,22 @@ class ActionKeyword:
         self.strategy_manager = StrategyManager(
             self.element_source, self.text_detection, self.image_detection
         )
-        self.execution_dir = builder.event_sdk.config_handler.config.execution_output_path
+        self.execution_dir = (
+            builder.event_sdk.config_handler.config.execution_output_path
+        )
 
     # Click actions
     @with_self_healing
     def press_element(
-        self, element: str, repeat: str = "1", offset_x: str = "0", offset_y: str = "0", event_name: Optional[str] = None, *, located: Any = None
-        ) -> None:
+        self,
+        element: str,
+        repeat: str = "1",
+        offset_x: str = "0",
+        offset_y: str = "0",
+        event_name: Optional[str] = None,
+        *,
+        located: Any = None,
+    ) -> None:
         """
         Press a specified element.
 
@@ -79,14 +115,22 @@ class ActionKeyword:
         if isinstance(located, tuple):
             x, y = located
             execution_logger.debug(
-                f"Pressing at coordinates ({x + int(offset_x)}, {y + int(offset_y)}) with offset ({offset_x}, {offset_y})")
+                f"Pressing at coordinates ({x + int(offset_x)}, {y + int(offset_y)}) with offset ({offset_x}, {offset_y})"
+            )
             self.driver.press_coordinates(
-                x + int(offset_x), y + int(offset_y), event_name)
+                x + int(offset_x), y + int(offset_y), event_name
+            )
         else:
             execution_logger.debug(f"Pressing element '{element}'")
             self.driver.press_element(located, int(repeat), event_name)
 
-    def press_by_percentage(self, percent_x: str, percent_y: str, repeat: str = "1", event_name: Optional[str] = None) -> None:
+    def press_by_percentage(
+        self,
+        percent_x: str,
+        percent_y: str,
+        repeat: str = "1",
+        event_name: Optional[str] = None,
+    ) -> None:
         """
         Press an element by percentage coordinates.
 
@@ -97,10 +141,13 @@ class ActionKeyword:
         """
         screenshot_np = self.strategy_manager.capture_screenshot()
         utils.save_screenshot(screenshot_np, "press_by_percentage")
-        element_source_type = type(getattr(self.element_source, 'current_instance', self.element_source)).__name__
-        if 'appium' in element_source_type.lower():
+        element_source_type = type(
+            getattr(self.element_source, "current_instance", self.element_source)
+        ).__name__
+        if "appium" in element_source_type.lower():
             self.driver.press_percentage_coordinates(
-                int(percent_x), int(percent_y), int(repeat), event_name)
+                int(percent_x), int(percent_y), int(repeat), event_name
+            )
         else:
             # TODO: read device's screen specs from config
             # DUMMY IMPLEMENTATION
@@ -110,7 +157,13 @@ class ActionKeyword:
             y_coor = int(screen_height * percent_y)
             self.driver.press_coordinates(x_coor, y_coor, event_name)
 
-    def press_by_coordinates(self, coor_x: str, coor_y: str, repeat: str = "1", event_name: Optional[str] = None) -> None:
+    def press_by_coordinates(
+        self,
+        coor_x: str,
+        coor_y: str,
+        repeat: str = "1",
+        event_name: Optional[str] = None,
+    ) -> None:
         """
         Press an element by absolute coordinates.
 
@@ -123,7 +176,9 @@ class ActionKeyword:
         utils.save_screenshot(screenshot_np, "press_by_coordinates")
         self.driver.press_coordinates(int(coor_x), int(coor_y), event_name)
 
-    def press_element_with_index(self, element: str, index_str: str = "0", event_name: Optional[str] = None) -> None:
+    def press_element_with_index(
+        self, element: str, index_str: str = "0", event_name: Optional[str] = None
+    ) -> None:
         """
         Press a specified text at a given index.
 
@@ -136,25 +191,31 @@ class ActionKeyword:
         utils.save_screenshot(screenshot_np, "press_element_with_index")
         element_source_type = type(self.element_source.current_instance).__name__
         element_type = utils.determine_element_type(element)
-        if element_type == 'Text':
-            if element_source_type == 'AppiumFindElement':
+        if element_type == "Text":
+            if element_source_type == "AppiumFindElement":
                 internal_logger.exception(
-                    'Appium Find Element does not support finding text by index.')
-            elif element_source_type == 'AppiumPageSource':
-                appium_element = self.element_source.locate(
-                    element, index)
+                    "Appium Find Element does not support finding text by index."
+                )
+            elif element_source_type == "AppiumPageSource":
+                appium_element = self.element_source.locate(element, index)
                 self.driver.press_element(
-                    appium_element, repeat=1, event_name=event_name)
+                    appium_element, repeat=1, event_name=event_name
+                )
             else:
-                if 'screenshot' not in element_source_type.lower():
+                if "screenshot" not in element_source_type.lower():
                     internal_logger.error(self.SCREENSHOT_DISABLED_MSG)
                 screenshot_image = self.element_source.capture()
                 coor = None
-                if self.text_detection and hasattr(self.text_detection, 'find_element'):
+                if self.text_detection and hasattr(self.text_detection, "find_element"):
                     try:
                         result = self.text_detection.find_element(
-                            screenshot_image, element, index)
-                        if result is not None and isinstance(result, (tuple, list)) and len(result) == 3:
+                            screenshot_image, element, index
+                        )
+                        if (
+                            result is not None
+                            and isinstance(result, (tuple, list))
+                            and len(result) == 3
+                        ):
                             _, coor, _ = result
                         else:
                             coor = None
@@ -162,23 +223,35 @@ class ActionKeyword:
                         coor = None
                 else:
                     coor = None
-                if coor is not None and isinstance(coor, (tuple, list)) and len(coor) == 2:
+                if (
+                    coor is not None
+                    and isinstance(coor, (tuple, list))
+                    and len(coor) == 2
+                ):
                     x_coor, y_coor = coor
-                    self.driver.press_coordinates(
-                        x_coor, y_coor, event_name=event_name)
+                    self.driver.press_coordinates(x_coor, y_coor, event_name=event_name)
                 else:
-                    internal_logger.error("Text detection failed or returned invalid coordinates.")
-                    raise ValueError("Text detection failed or returned invalid coordinates.")
-        elif element_type == 'Image':
-            if 'screenshot' not in element_source_type.lower():
+                    internal_logger.error(
+                        "Text detection failed or returned invalid coordinates."
+                    )
+                    raise ValueError(
+                        "Text detection failed or returned invalid coordinates."
+                    )
+        elif element_type == "Image":
+            if "screenshot" not in element_source_type.lower():
                 internal_logger.error(self.SCREENSHOT_DISABLED_MSG)
             screenshot_image = self.element_source.capture()
             centre = None
-            if self.image_detection and hasattr(self.image_detection, 'find_element'):
+            if self.image_detection and hasattr(self.image_detection, "find_element"):
                 try:
                     result = self.image_detection.find_element(
-                        screenshot_image, element, index)
-                    if result is not None and isinstance(result, (tuple, list)) and len(result) == 3:
+                        screenshot_image, element, index
+                    )
+                    if (
+                        result is not None
+                        and isinstance(result, (tuple, list))
+                        and len(result) == 3
+                    ):
                         _, centre, _ = result
                     else:
                         centre = None
@@ -186,20 +259,37 @@ class ActionKeyword:
                     centre = None
             else:
                 centre = None
-            if centre is not None and isinstance(centre, (tuple, list)) and len(centre) == 2:
+            if (
+                centre is not None
+                and isinstance(centre, (tuple, list))
+                and len(centre) == 2
+            ):
                 x_coor, y_coor = centre
-                self.driver.press_coordinates(
-                    x_coor, y_coor, event_name=event_name)
+                self.driver.press_coordinates(x_coor, y_coor, event_name=event_name)
             else:
-                internal_logger.error("Image detection failed or returned invalid coordinates.")
-                raise ValueError("Image detection failed or returned invalid coordinates.")
-        elif element_type == 'XPath':
+                internal_logger.error(
+                    "Image detection failed or returned invalid coordinates."
+                )
+                raise ValueError(
+                    "Image detection failed or returned invalid coordinates."
+                )
+        elif element_type == "XPath":
             internal_logger.debug(
-                'XPath is not supported for index based location. Provide the attribute as text.')
-            raise NotImplementedError("XPath is not supported for index based location.")
+                "XPath is not supported for index based location. Provide the attribute as text."
+            )
+            raise NotImplementedError(
+                "XPath is not supported for index based location."
+            )
 
     @with_self_healing
-    def detect_and_press(self, element: str, timeout: str, event_name: Optional[str] = None, *, located: Any=None) -> None:
+    def detect_and_press(
+        self,
+        element: str,
+        timeout: str,
+        event_name: Optional[str] = None,
+        *,
+        located: Any = None,
+    ) -> None:
         """
         Detect and press a specified element.
 
@@ -209,23 +299,32 @@ class ActionKeyword:
         """
         screenshot_np = self.strategy_manager.capture_screenshot()
         utils.save_screenshot(screenshot_np, "detect_and_press")
-        result = self.verifier.assert_presence(
-            element, timeout_str=timeout, rule="any")
+        try:
+            result = self.verifier.assert_presence(
+                element, timeout_str=timeout, rule="any"
+            )
+        except Exception as e:
+            internal_logger.debug(
+                f"detect_and_press: assert_presence raised {e}, skipping press."
+            )
+            return
+
         if result:
             if isinstance(located, tuple):
                 x, y = located
                 internal_logger.debug(
-                    f"Pressing detected element at coordinates ({x}, {y})")
-                self.driver.press_coordinates(
-                    x, y, event_name=event_name)
+                    f"Pressing detected element at coordinates ({x}, {y})"
+                )
+                self.driver.press_coordinates(x, y, event_name=event_name)
             else:
                 internal_logger.debug(f"Pressing detected element '{element}'")
-                self.driver.press_element(
-                    located, repeat=1, event_name=event_name)
+                self.driver.press_element(located, repeat=1, event_name=event_name)
 
     @DeprecationWarning
     @with_self_healing
-    def press_checkbox(self, element: str, event_name: Optional[str] = None, *, located: Any=None) -> None:
+    def press_checkbox(
+        self, element: str, event_name: Optional[str] = None, *, located: Any = None
+    ) -> None:
         """
         Press a specified checkbox element.
 
@@ -236,7 +335,9 @@ class ActionKeyword:
 
     @DeprecationWarning
     @with_self_healing
-    def press_radio_button(self, element: str, event_name: Optional[str] = None, *, located: Any=None) -> None:
+    def press_radio_button(
+        self, element: str, event_name: Optional[str] = None, *, located: Any = None
+    ) -> None:
         """
         Press a specified radio button.
 
@@ -245,7 +346,9 @@ class ActionKeyword:
         """
         self.press_element(element, event_name=event_name, located=located)
 
-    def select_dropdown_option(self, element: str, option: str, event_name: Optional[str] = None) -> None:
+    def select_dropdown_option(
+        self, element: str, option: str, event_name: Optional[str] = None
+    ) -> None:
         """
         Select a specified dropdown option.
 
@@ -256,7 +359,14 @@ class ActionKeyword:
         pass
 
     # Swipe and Scroll actions
-    def swipe(self, coor_x: str, coor_y: str, direction: str = 'right', swipe_length: str = "50", event_name: Optional[str] = None) -> None:
+    def swipe(
+        self,
+        coor_x: str,
+        coor_y: str,
+        direction: str = "right",
+        swipe_length: str = "50",
+        event_name: Optional[str] = None,
+    ) -> None:
         """
         Perform a swipe action in a specified direction.
 
@@ -268,10 +378,14 @@ class ActionKeyword:
         """
         screenshot_np = self.strategy_manager.capture_screenshot()
         utils.save_screenshot(screenshot_np, "swipe")
-        self.driver.swipe(int(coor_x), int(coor_y), direction, int(swipe_length), event_name)
+        self.driver.swipe(
+            int(coor_x), int(coor_y), direction, int(swipe_length), event_name
+        )
 
     @DeprecationWarning
-    def swipe_seekbar_to_right_android(self, element: str, event_name: Optional[str] = None) -> None:
+    def swipe_seekbar_to_right_android(
+        self, element: str, event_name: Optional[str] = None
+    ) -> None:
         """
         Swipe a seekbar to the right.
 
@@ -279,9 +393,15 @@ class ActionKeyword:
         """
         screenshot_np = self.strategy_manager.capture_screenshot()
         utils.save_screenshot(screenshot_np, "swipe_seekbar_to_right_android")
-        self.driver.swipe_element(element, 'right', 50, event_name)
+        self.driver.swipe_element(element, "right", 50, event_name)
 
-    def swipe_until_element_appears(self, element: str, direction: str, timeout: str, event_name: Optional[str] = None) -> None:
+    def swipe_until_element_appears(
+        self,
+        element: str,
+        direction: str,
+        timeout: str,
+        event_name: Optional[str] = None,
+    ) -> None:
         """
         Swipe in a specified direction until an element appears.
 
@@ -294,15 +414,22 @@ class ActionKeyword:
         utils.save_screenshot(screenshot_np, "swipe_until_element_appears")
         start_time = time.time()
         while time.time() - start_time < int(timeout):
-            result = self.verifier.assert_presence(
-                element, timeout_str="3", rule="any")
+            result = self.verifier.assert_presence(element, timeout_str="3", rule="any")
             if result:
                 break
             self.driver.swipe_percentage(10, 50, direction, 25, event_name)
             time.sleep(3)
 
     @with_self_healing
-    def swipe_from_element(self, element: str, direction: str, swipe_length: str, event_name: Optional[str] = None, *, located: Any=None) -> None:
+    def swipe_from_element(
+        self,
+        element: str,
+        direction: str,
+        swipe_length: str,
+        event_name: Optional[str] = None,
+        *,
+        located: Any = None,
+    ) -> None:
         """
         Perform a swipe action starting from a specified element.
 
@@ -316,8 +443,7 @@ class ActionKeyword:
             execution_logger.debug(f"Swiping from coordinates ({x}, {y})")
             self.driver.swipe(x, y, direction, int(swipe_length), event_name)
         else:
-            self.driver.swipe_element(
-                located, direction, int(swipe_length), event_name)
+            self.driver.swipe_element(located, direction, int(swipe_length), event_name)
 
     def scroll(self, direction: str, event_name: Optional[str] = None) -> None:
         """
@@ -330,7 +456,13 @@ class ActionKeyword:
         utils.save_screenshot(screenshot_np, "scroll")
         self.driver.scroll(direction, 1000, event_name)
 
-    def scroll_until_element_appears(self, element: str, direction: str, timeout: str, event_name: Optional[str] = None) -> None:
+    def scroll_until_element_appears(
+        self,
+        element: str,
+        direction: str,
+        timeout: str,
+        event_name: Optional[str] = None,
+    ) -> None:
         """
         Scroll in a specified direction until an element appears.
 
@@ -343,15 +475,22 @@ class ActionKeyword:
         utils.save_screenshot(screenshot_np, "scroll_until_element_appears")
         start_time = time.time()
         while time.time() - start_time < int(timeout):
-            result = self.verifier.assert_presence(
-                element, timeout_str="3", rule="any")
+            result = self.verifier.assert_presence(element, timeout_str="3", rule="any")
             if result:
                 break
             self.driver.scroll(direction, 1000, event_name)
             time.sleep(3)
 
     @with_self_healing
-    def scroll_from_element(self, element: str, direction: str, scroll_length: str, event_name: Optional[str] = None, *, located: Any=None) -> None:
+    def scroll_from_element(
+        self,
+        element: str,
+        direction: str,
+        scroll_length: str,
+        event_name: Optional[str] = None,
+        *,
+        located: Any = None,
+    ) -> None:
         """
         Perform a scroll action starting from a specified element.
 
@@ -368,11 +507,19 @@ class ActionKeyword:
             self.driver.swipe(x, y, direction, int(scroll_length), event_name)
         else:
             self.driver.swipe_element(
-                located, direction, int(scroll_length), event_name)
+                located, direction, int(scroll_length), event_name
+            )
 
     # Text input actions
     @with_self_healing
-    def enter_text(self, element: str, text: str, event_name: Optional[str] = None, *, located: Any=None) -> None:
+    def enter_text(
+        self,
+        element: str,
+        text: str,
+        event_name: Optional[str] = None,
+        *,
+        located: Any = None,
+    ) -> None:
         """
         Enter text into a specified element.
 
@@ -400,7 +547,9 @@ class ActionKeyword:
         utils.save_screenshot(screenshot_np, "enter_text_keyboard")
         self.driver.enter_text(text, event_name)
 
-    def enter_text_using_keyboard(self, text_input: str, event_name: Optional[str] = None) -> None:
+    def enter_text_using_keyboard(
+        self, text_input: str, event_name: Optional[str] = None
+    ) -> None:
         """
         Enter text or press a special key using the keyboard.
 
@@ -410,7 +559,6 @@ class ActionKeyword:
         :param input: The text or special key identifier to send.
         :param event_name: Optional event label for logging.
         """
-
 
         if isinstance(text_input, str) and "_" in text_input:
             key_input = text_input.split("_")[0].lower()
@@ -424,7 +572,14 @@ class ActionKeyword:
         self.driver.enter_text_using_keyboard(text_input, event_name)
 
     @with_self_healing
-    def enter_number(self, element: str, number: str, event_name: Optional[str] = None, *, located: Any=None) -> None:
+    def enter_number(
+        self,
+        element: str,
+        number: str,
+        event_name: Optional[str] = None,
+        *,
+        located: Any = None,
+    ) -> None:
         """
         Enter a specified number into an element.
 
@@ -436,14 +591,18 @@ class ActionKeyword:
         utils.save_screenshot(screenshot_np, "enter_number")
         if isinstance(located, tuple):
             x, y = located
-            internal_logger.debug(f"Entering number '{number}' at coordinates ({x}, {y})")
+            internal_logger.debug(
+                f"Entering number '{number}' at coordinates ({x}, {y})"
+            )
             self.driver.press_coordinates(x, y, event_name=event_name)
             self.driver.enter_text(str(number), event_name)
         elif isinstance(located, str):
             self.driver.enter_text_element(located, str(number), event_name)
         else:
             internal_logger.error(
-                "Element location %s is not provided correctly for entering number.", element)
+                "Element location %s is not provided correctly for entering number.",
+                element,
+            )
             raise ValueError(
                 f"Element location {element} is not provided correctly for entering number."
             )
@@ -460,7 +619,9 @@ class ActionKeyword:
         self.driver.press_keycode(keycode, event_name)
 
     @with_self_healing
-    def clear_element_text(self, element: str, event_name: Optional[str] = None, *, located: Any=None) -> None:
+    def clear_element_text(
+        self, element: str, event_name: Optional[str] = None, *, located: Any = None
+    ) -> None:
         """
         Clear text from a specified element.
 
@@ -470,8 +631,7 @@ class ActionKeyword:
         if isinstance(located, tuple):
             x, y = located
             internal_logger.debug(f"Clearing text at coordinates ({x}, {y})")
-            self.driver.press_coordinates(
-                x, y, event_name=event_name)
+            self.driver.press_coordinates(x, y, event_name=event_name)
             self.driver.clear_text(event_name)
         else:
             internal_logger.debug(f"Clearing text from element '{element}'")
@@ -486,24 +646,25 @@ class ActionKeyword:
         """
         screenshot_np = self.strategy_manager.capture_screenshot()
         utils.save_screenshot(screenshot_np, "get_text")
-        element_source_type = type(
-            self.element_source.current_instance).__name__
+        element_source_type = type(self.element_source.current_instance).__name__
         element_type = utils.determine_element_type(element)
         if element_type in ["Text", "XPath"]:
-            if 'appium' in element_source_type.lower():
+            if "appium" in element_source_type.lower():
                 result = self.element_source.locate(element)
                 if result is not None:
                     return self.driver.get_text_element(result)
                 else:
-                    internal_logger.error('Locate returned None for get_text.')
+                    internal_logger.error("Locate returned None for get_text.")
                     return None
             else:
                 internal_logger.error(
-                    'Get Text is not supported for vision based search yet.')
+                    "Get Text is not supported for vision based search yet."
+                )
                 return None
         else:
             internal_logger.error(
-                'Get Text is not supported for image based search yet.')
+                "Get Text is not supported for image based search yet."
+            )
             return None
 
     def sleep(self, duration: str) -> None:
