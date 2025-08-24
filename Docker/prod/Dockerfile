@@ -15,11 +15,9 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     libglib2.0-0 \
  && pip install --no-cache-dir \
     appium-python-client \
-    easyocr \
     fastapi \
     optics-framework \
     uvicorn \
- && python3 -c "import easyocr; easyocr.Reader(['en'], download_enabled=True)" \
  && rm -rf /var/lib/apt/lists/* \
  && chown -R appuser:appuser /app
 

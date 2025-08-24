@@ -301,7 +301,7 @@ def run_keyword_endpoint(device_id: str, session_id: str, keyword: str, params: 
     return execute_keyword(device_id, session_id, request)
 
 
-@app.get("/{device_id}/v1/session/{session_id}/screenshot")
+@app.get("/{device_id}/session/{session_id}/screenshot")
 async def capture_screenshot(device_id: str, session_id: str):
     """
     Capture a screenshot in the specified session.
@@ -309,7 +309,7 @@ async def capture_screenshot(device_id: str, session_id: str):
     """
     return await run_keyword_endpoint(device_id, session_id, "capture_screenshot")
 
-@app.get("/{device_id}/v1/session/{session_id}/elements")
+@app.get("/{device_id}/session/{session_id}/elements")
 async def get_elements(device_id: str, session_id: str):
     """
     Get interactive elements from the current session screen.
@@ -317,7 +317,7 @@ async def get_elements(device_id: str, session_id: str):
     """
     return await run_keyword_endpoint(device_id, session_id, "get_interactive_elements")
 
-@app.get("/{device_id}/v1/session/{session_id}/source")
+@app.get("/{device_id}/session/{session_id}/source")
 async def get_pagesource(device_id: str, session_id: str):
     """
     Capture the page source from the current session.
@@ -325,7 +325,7 @@ async def get_pagesource(device_id: str, session_id: str):
     """
     return await run_keyword_endpoint(device_id, session_id, "capture_pagesource")
 
-@app.get("/{device_id}/v1/session/{session_id}/screen_elements")
+@app.get("/{device_id}/session/{session_id}/screen_elements")
 async def screen_elements(device_id: str, session_id: str):
     """
     Capture and get screen elements from the current session.

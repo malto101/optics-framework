@@ -166,7 +166,7 @@ def annotate(annotation_detail):
 def is_black_screen(image):
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     average_colour = np.mean(gray_image)
-    black_threshold = 10
+    black_threshold = 1
     return average_colour < black_threshold
 
 

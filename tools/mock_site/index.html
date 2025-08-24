@@ -428,7 +428,7 @@
     }
     function getScreenshot() {
       if (!sessionId) {showResponse('No session started'); return;}
-      const url = `${API_BASE}/${deviceId}/v1/session/${sessionId}/screenshot`;
+      const url = `${API_BASE}/${deviceId}/session/${sessionId}/screenshot`;
       logRequest(url, {});
       return fetch(url)
         .then((res) => res.json())
@@ -471,7 +471,7 @@
     }
     function getElements() {
       if (!sessionId) {showResponse('No session started'); return;}
-      const url = `${API_BASE}/${deviceId}/v1/session/${sessionId}/elements`;
+      const url = `${API_BASE}/${deviceId}/session/${sessionId}/elements`;
       logRequest(url, {});
       return fetch(url)
         .then((res) => res.json())
@@ -488,7 +488,7 @@
     }
     function getPageSource() {
       if (!sessionId) {showResponse('No session started'); return;}
-      const url = `${API_BASE}/${deviceId}/v1/session/${sessionId}/source`;
+      const url = `${API_BASE}/${deviceId}/session/${sessionId}/source`;
       logRequest(url, {});
       fetch(url)
         .then(res => res.json())
@@ -497,7 +497,7 @@
     }
     function getScreenElements() {
       if (!sessionId) {showResponse('No session started'); return;}
-      const url = `${API_BASE}/${deviceId}/v1/session/${sessionId}/screen_elements`;
+      const url = `${API_BASE}/${deviceId}/session/${sessionId}/screen_elements`;
       logRequest(url, {});
       fetch(url)
         .then(res => res.json())

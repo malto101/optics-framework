@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.2.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.9.0-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -10,7 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 WORKDIR /app
 
-# Install system packages and Python
+# Install system packages, Python, and upgrade pip in one RUN to reduce layers
 RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
   ca-certificates \
@@ -24,10 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   python3 \
   python3-pip \
   python3-venv \
- && rm -rf /var/lib/apt/lists/*
-
-# Ensure pip is modern
-RUN python3 -m pip install --upgrade pip setuptools wheel
+ && rm -rf /var/lib/apt/lists/* && \
+ python3 -m pip install --upgrade pip setuptools wheel
 
 # Copy dependency files and build wheels if present
 COPY pyproject.toml poetry.lock* /app/
@@ -38,43 +36,32 @@ COPY . /app
 
 # Install runtime deps
 COPY --from=0 /wheels /wheels
+# Install runtime dependencies (from wheelhouse if present), a CUDA-enabled
+# PyTorch (cu129), verify the torch import, install easyocr + server packages,
+# and pre-download EasyOCR models — all in a single RUN to reduce layers.
 RUN if [ -d /wheels ] && [ "$(ls -A /wheels)" ]; then \
-      python3 -m pip install --no-cache-dir /wheels/*; \
-    else \
-      python3 -m pip install --no-cache-dir .; \
-    fi
-
-# Ensure runtime server packages are installed in the final image
-RUN python3 -m pip install --no-cache-dir "easyocr" "gunicorn>=20.0" "uvicorn[standard]"
-
-# Pre-download EasyOCR models at build time into the optics home so the
-# runtime doesn't need to fetch models (avoids runtime downloads and OOMs).
-RUN mkdir -p /home/optics && \
-  python3 - <<'PY'
-import os
-os.environ['HOME'] = '/home/optics'
-try:
-  from easyocr import Reader
-  # instantiate reader to force model download for English
-  Reader(['en'], gpu=False)
-  print('EasyOCR models downloaded')
-except Exception as e:
-  print('EasyOCR model bootstrap failed:', e)
-  raise
-PY
+    python3 -m pip install --no-cache-dir /wheels/*; \
+  else \
+    python3 -m pip install --no-cache-dir .; \
+  fi && \
+  python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
+  python3 -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu129 torch torchvision || python3 -m pip install --no-cache-dir torch torchvision && \
+  python3 -c 'import sys, torch; print("torch==", getattr(torch, "__version__", "unknown")); print("cuda_available==", torch.cuda.is_available())' && \
+  python3 -m pip install --no-cache-dir "easyocr" "gunicorn>=20.0" "uvicorn[standard]" && \
+  mkdir -p /home/optics && \
+  python3 -c 'import os; os.environ["HOME"] = "/home/optics"; from easyocr import Reader; Reader(["en"], gpu=True); print("EasyOCR models downloaded")'
 
 # Expose port
 EXPOSE 8090
 
 # Entrypoint (added before creating non-root user so we can chmod as root)
 COPY tools/mock_remote_ocr/scalable/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-# Create non-root user with home dir and ensure ownership
-RUN groupadd -r optics \
- && useradd -r -g optics -m -d /home/optics optics \
- && mkdir -p /home/optics/.EasyOCR/model \
- && chown -R optics:optics /app /entrypoint.sh /home/optics
+# Combine chmod and user creation into a single RUN to reduce layers
+RUN chmod +x /entrypoint.sh && \
+  groupadd -r optics && \
+  useradd -r -g optics -m -d /home/optics optics && \
+  mkdir -p /home/optics/.EasyOCR/model && \
+  chown -R optics:optics /app /entrypoint.sh /home/optics
 USER optics
 
 ENV APP_MODULE=tools.mock_remote_ocr.mock_remote_ocr:app \
