@@ -696,7 +696,7 @@ async def run_keyword_endpoint(
     return await execute_keyword(device_id, session_id, request)
 
 
-@app.get("/{device_id}/v1/sessions/{session_id}/screenshot")
+@app.get("/{device_id}/session/{session_id}/screenshot")
 async def capture_screenshot(device_id: str, session_id: str):
     """
     Capture a screenshot in the specified session.
@@ -712,7 +712,7 @@ async def get_driver_session_id(device_id: str, session_id: str):
     """
     return await run_keyword_endpoint(device_id, session_id, "get_driver_session_id")
 
-@app.get("/{device_id}/v1/sessions/{session_id}/elements")
+@app.get("/{device_id}/session/{session_id}/elements")
 async def get_elements(
     device_id: str,
     session_id: str,
