@@ -284,8 +284,8 @@ async def health_check():
     """
     return HealthCheckResponse(status="Optics Framework API is running", version=VERSION)
 
-@app.post("/v1/sessions/start", response_model=SessionResponse)
-async def create_session(config: SessionConfig):
+@app.post("/{device_id}/v1/sessions/start", response_model=SessionResponse)
+async def create_session(device_id: str, config: SessionConfig):
     """
     Create a new Optics session with the provided configuration.
     Returns the session ID if successful.
@@ -344,7 +344,7 @@ async def create_session(config: SessionConfig):
             keyword="launch_app",
             params=[]
         )
-        driver_session = await execute_keyword(session_id, launch_request)
+        driver_session = await execute_keyword(device_id, session_id, launch_request)
         return SessionResponse(
             session_id=session_id,
             driver_id=(driver_session.data or {}).get("result")
@@ -609,8 +609,8 @@ async def _execute_keyword_with_fallback(
     raise RuntimeError(f"No valid fallback values provided for keyword '{keyword}'")
 
 
-@app.post("/v1/sessions/{session_id}/action")
-async def execute_keyword(session_id: str, request: ExecuteRequest):
+@app.post("/{device_id}/v1/sessions/{session_id}/action")
+async def execute_keyword(device_id: str, session_id: str, request: ExecuteRequest):
     """
     Execute a keyword in the specified session.
     Supports both positional and named parameters with fallback support.
@@ -682,6 +682,7 @@ async def execute_keyword(session_id: str, request: ExecuteRequest):
 
 # Helper for DRY keyword execution endpoints
 async def run_keyword_endpoint(
+    device_id: str,
     session_id: str,
     keyword: str,
     params: Optional[Union[List[Union[str, List[str]]], Dict[str, Union[str, List[str]]]]] = None
@@ -692,27 +693,28 @@ async def run_keyword_endpoint(
     """
     safe_params: Union[List[Union[str, List[str]]], Dict[str, Union[str, List[str]]]] = params or []
     request = ExecuteRequest(mode="keyword", keyword=keyword, params=safe_params)
-    return await execute_keyword(session_id, request)
+    return await execute_keyword(device_id, session_id, request)
 
 
-@app.get("/v1/sessions/{session_id}/screenshot")
-async def capture_screenshot(session_id: str):
+@app.get("/{device_id}/v1/sessions/{session_id}/screenshot")
+async def capture_screenshot(device_id: str, session_id: str):
     """
     Capture a screenshot in the specified session.
     Returns the screenshot result.
     """
-    return await run_keyword_endpoint(session_id, "capture_screenshot")
+    return await run_keyword_endpoint(device_id, session_id, "capture_screenshot")
 
-@app.get("/v1/sessions/{session_id}/driver-id")
-async def get_driver_session_id(session_id: str):
+@app.get("/{device_id}/v1/sessions/{session_id}/driver-id")
+async def get_driver_session_id(device_id: str, session_id: str):
     """
     Get the underlying Driver session ID for this Optics session.
     Returns ExecutionResponse with the session id in data.result.
     """
-    return await run_keyword_endpoint(session_id, "get_driver_session_id")
+    return await run_keyword_endpoint(device_id, session_id, "get_driver_session_id")
 
-@app.get("/v1/sessions/{session_id}/elements")
+@app.get("/{device_id}/v1/sessions/{session_id}/elements")
 async def get_elements(
+    device_id: str,
     session_id: str,
     filter_config: Optional[List[str]] = Query(None, description="Filter types: all, interactive, buttons, inputs, images, text")
 ):
@@ -736,26 +738,26 @@ async def get_elements(
     params: Optional[Dict[str, Union[str, List[str]]]] = None
     if filter_config:
         params = {"filter_config": filter_config}
-    return await run_keyword_endpoint(session_id, "get_interactive_elements", params)
+    return await run_keyword_endpoint(device_id, session_id, "get_interactive_elements", params)
 
-@app.get("/v1/sessions/{session_id}/source")
-async def get_pagesource(session_id: str):
+@app.get("/{device_id}/v1/sessions/{session_id}/source")
+async def get_pagesource(device_id: str, session_id: str):
     """
     Capture the page source from the current session.
     Returns the page source result.
     """
-    return await run_keyword_endpoint(session_id, "capture_pagesource")
+    return await run_keyword_endpoint(device_id, session_id, "capture_pagesource")
 
-@app.get("/v1/sessions/{session_id}/screen_elements")
-async def screen_elements(session_id: str):
+@app.get("/{device_id}/v1/sessions/{session_id}/screen_elements")
+async def screen_elements(device_id: str, session_id: str):
     """
     Capture and get screen elements from the current session.
     Returns the screen elements result.
     """
-    return await run_keyword_endpoint(session_id, "get_screen_elements")
+    return await run_keyword_endpoint(device_id, session_id, "get_screen_elements")
 
-@app.get("/v1/sessions/{session_id}/events")
-async def stream_events(session_id: str):
+@app.get("/{device_id}/v1/sessions/{session_id}/events")
+async def stream_events(device_id: str, session_id: str):
     """
     Stream execution events for the specified session using Server-Sent Events (SSE).
     """
@@ -766,8 +768,8 @@ async def stream_events(session_id: str):
     internal_logger.info(f"Starting event stream for session {session_id}")
     return EventSourceResponse(event_generator(session))
 
-@app.get("/v1/keywords", response_model=List[KeywordInfo])
-async def list_keywords():
+@app.get("/{device_id}/v1/keywords", response_model=List[KeywordInfo])
+async def list_keywords(device_id: str):
     """
     List all available keywords and their parameters.
     """
@@ -827,8 +829,8 @@ async def event_generator(session: Session):
             ).model_dump())}
             break
 
-@app.delete("/v1/sessions/{session_id}/stop", response_model=TerminationResponse)
-async def delete_session(session_id: str):
+@app.delete("/{device_id}/v1/sessions/{session_id}/stop", response_model=TerminationResponse)
+async def delete_session(device_id: str, session_id: str):
     """
     Terminate the specified session and clean up resources.
     Returns termination status.
@@ -839,7 +841,7 @@ async def delete_session(session_id: str):
         params=[]
     )
     try:
-        await execute_keyword(session_id, kill_request)
+        await execute_keyword(device_id, session_id, kill_request)
     except Exception as e:
         internal_logger.error(f"Failed to terminate session {session_id}: {e}")
         if isinstance(e, OpticsError):
