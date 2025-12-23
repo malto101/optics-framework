@@ -8,7 +8,9 @@ from optics_framework.common.async_utils import run_async
 
 
 class Playwright(DriverInterface):
-    REQUIRED_DRIVER_TYPE = "playwright"
+    DEPENDENCY_TYPE = "driver_sources"
+    NAME = "playwright"
+
 
     def __init__(self, config: dict, event_sdk: Optional[EventSDK] = None):
         self.config = config or {}

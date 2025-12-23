@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Coroutine
 from optics_framework.common.logging_config import internal_logger
 
@@ -59,23 +60,39 @@ def run_async(coro: Coroutine[Any, Any, Any]):
     current_thread = threading.current_thread()
     loop_thread = getattr(loop, '_thread', None)
 
-    # If we're in the same thread as the event loop, we need to run in a separate thread
-    # to avoid deadlock. Use ThreadPoolExecutor to run the coroutine in a new event loop.
-    if current_thread == loop_thread:
-        # Run in a separate thread with a new event loop
-        # Note: This creates a new event loop, so the page object needs to be accessible
-        # Actually, this won't work because the page is tied to the original loop
-        # So we need to use run_coroutine_threadsafe but ensure the loop can process it
-        # Let's try using a timeout and see if that helps
+    # If we're in the same thread as the event loop, we need to avoid deadlock.
+    # run_coroutine_threadsafe() + blocking wait causes deadlock when called from
+    # the same thread as the event loop. Use ThreadPoolExecutor to run the
+    # coroutine scheduling from a different thread.
+    #
+    # If loop_thread is None (not set on this event loop), we err on the side
+    # of caution and assume we might be in the same thread to avoid deadlock.
+    if loop_thread is None or current_thread == loop_thread:
+        if loop_thread is None:
+            internal_logger.debug("[AsyncUtils] Loop thread unknown → using ThreadPoolExecutor (safe)")
+        else:
+            internal_logger.debug("[AsyncUtils] Same thread as event loop → using ThreadPoolExecutor")
+
+        def _run_in_thread():
+            """Helper function to run coroutine_threadsafe from a different thread."""
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+            try:
+                return future.result(timeout=30)
+            except Exception:
+                raise
+
+        # Use ThreadPoolExecutor to run the helper in a different thread
+        # This avoids deadlock because the helper thread can safely block
+        # while the event loop thread continues processing
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_run_in_thread)
+            return future.result(timeout=30)
+    else:
+        # Different thread - safe to use run_coroutine_threadsafe directly
+        internal_logger.debug("[AsyncUtils] Different thread → safe to use run_coroutine_threadsafe")
         future = asyncio.run_coroutine_threadsafe(coro, loop)
         try:
-            # Use a timeout to prevent indefinite blocking
             result = future.result(timeout=30)
         except Exception:
             raise
-        return result
-    else:
-        # Different thread - safe to use run_coroutine_threadsafe
-        future = asyncio.run_coroutine_threadsafe(coro, loop)
-        result = future.result(timeout=30)
         return result
