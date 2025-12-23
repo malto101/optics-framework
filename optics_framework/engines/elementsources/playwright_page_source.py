@@ -6,6 +6,7 @@ from optics_framework.common.logging_config import internal_logger
 from optics_framework.common.elementsource_interface import ElementSourceInterface
 from optics_framework.common.error import OpticsError, Code
 from optics_framework.common import utils
+from optics_framework.common.async_utils import run_async
 
 
 PLAYWRIGHT_NOT_INITIALISED_MSG = (
@@ -171,7 +172,13 @@ class PlaywrightPageSource(ElementSourceInterface):
         if isinstance(elements, str):
             elements = [elements]
 
-        page = self._require_page()
+        # Check if driver is initialized before entering the loop
+        try:
+            page = self._require_page()
+        except OpticsError:
+            # If driver is not initialized, return False immediately instead of looping
+            return False, utils.get_timestamp()
+
         start_time = time.time()
 
         internal_logger.info(
@@ -201,10 +208,9 @@ class PlaywrightPageSource(ElementSourceInterface):
                         "[PlaywrightPageSource] Element '%s'",
                         element
                     )
-                    found = locator.count() > 0
-                    results.append(found)
-                    html, _ = self.get_page_source()
-                    found = element in html
+                    # Use run_async to await async Playwright methods
+                    count = run_async(locator.count())
+                    found = count > 0
                     results.append(found)
 
                     if rule == "any" and found:
@@ -215,12 +221,8 @@ class PlaywrightPageSource(ElementSourceInterface):
                         "[PlaywrightPageSource] Error checking '%s': %s",
                         element, str(e)
                     )
-                    html, _ = self.get_page_source()
-                    found = element in html
-                    results.append(found)
-
-                    if rule == "any" and found:
-                        return True, utils.get_timestamp()
+                    # Don't call get_page_source() in exception handler as it may also fail
+                    # Just mark as not found
                     results.append(False)
 
             if rule == "all" and all(results):

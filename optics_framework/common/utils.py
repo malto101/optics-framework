@@ -97,6 +97,35 @@ def determine_element_type(element):
     # Check if it looks like an ID (heuristic: no slashes, no dots, usually alphanumeric/underscores)
     if element.lower().startswith("id:"):
         return "ID"
+    # Check if it looks like a CSS selector
+    # CSS selectors typically contain:
+    # - Attribute selectors: [name="value"], [id="value"]
+    # - Class/id selectors: .class, #id
+    # - Tag selectors: input, div, button followed by brackets or combinators
+    # - Combinators: >, +, ~, space
+    if "[" in element and "]" in element:
+        # Attribute selector pattern like input[name="value"]
+        return "CSS"
+    if element.startswith(".") or element.startswith("#"):
+        # Class or ID selector
+        return "CSS"
+    # Check for CSS combinators (>, +, ~) or tag names followed by combinators
+    css_combinators = [">", "+", "~"]
+    if any(comb in element for comb in css_combinators):
+        return "CSS"
+    # Check for common HTML tag names at the start (simple heuristic)
+    common_tags = ["input", "div", "button", "a", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6",
+                   "form", "select", "textarea", "img", "ul", "ol", "li", "table", "tr", "td", "th"]
+    element_lower = element.lower().strip()
+    # Check if it starts with a tag name (must be followed by space, >, +, ~, [, or end of string)
+    for tag in common_tags:
+        if element_lower.startswith(tag):
+            # Check if it's followed by valid CSS syntax (not just plain text)
+            remaining = element_lower[len(tag):].strip()
+            if (not remaining or
+                remaining.startswith(("[", ".", "#", ">", "+", "~", ":")) or
+                remaining[0] in " >+~:"):
+                return "CSS"
     # Default case: consider the input as Text
     return "Text"
 

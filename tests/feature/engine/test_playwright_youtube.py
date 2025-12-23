@@ -53,7 +53,8 @@ def test_youtube_search_and_play(optics_instance):
     optics.enter_text_using_keyboard(
         "Wild Stone Edge Perfume Review | Best Perfume For Men"
     )
-    optics.press_element("search_button")
+    # Press Enter key to submit search
+    optics.press_keycode("Enter")
 
     optics.scroll("down", "1200")
 

@@ -95,12 +95,14 @@ class Verifier:
         return result
 
     def _group_elements_by_type(self, elements_list: list) -> dict:
-        """Group elements by their type (Text, XPath, Image)."""
-        return {
+        """Group elements by their type (Text, XPath, Image, CSS)."""
+        grouped = {
             'Text': [el for el in elements_list if utils.determine_element_type(el) == 'Text'],
             'XPath': [el for el in elements_list if utils.determine_element_type(el) == 'XPath'],
-            'Image': [el for el in elements_list if utils.determine_element_type(el) == 'Image']
+            'Image': [el for el in elements_list if utils.determine_element_type(el) == 'Image'],
+            'CSS': [el for el in elements_list if utils.determine_element_type(el) == 'CSS']
         }
+        return grouped
 
     def _process_element_groups(self, grouped_elements: dict, timeout: int, rule: str) -> tuple:
         """Process each group of elements and collect results."""
