@@ -12,6 +12,7 @@ from optics_framework.common import utils
 class Playwright(DriverInterface):
     DEPENDENCY_TYPE = "driver_sources"
     NAME = "playwright"
+    PAGE_NOT_INITIALIZED_MSG = "Playwright page not initialized"
 
 
     def __init__(self, config: dict, event_sdk: Optional[EventSDK] = None):
@@ -104,7 +105,7 @@ class Playwright(DriverInterface):
         If navigation times out but the URL is reached, continue with a warning.
         """
         if not self.page:
-            raise OpticsError(Code.E0102, "Playwright page not initialized")
+            raise OpticsError(Code.E0102, self.PAGE_NOT_INITIALIZED_MSG)
 
         timeout_ms = int(self.config.get("navigation_timeout_ms", 60000))
         wait_until = self.config.get("navigation_wait_until", "domcontentloaded")
@@ -264,7 +265,7 @@ class Playwright(DriverInterface):
         """
 
         if not self.page:
-            raise RuntimeError("Playwright page not initialized")
+            raise RuntimeError(self.PAGE_NOT_INITIALIZED_MSG)
 
         # 🔒 Web rule: swipe == scroll
         try:
@@ -305,35 +306,12 @@ class Playwright(DriverInterface):
             delta
         )
 
-    # def scroll(self, direction: str, duration: int, event_name=None):
-    #     delta = duration if direction == "down" else -duration
-    #     execution_logger.debug(
-    #             "[Playwright] scroll direction=%s pixels=%d",
-    #             direction, delta
-    #         )
-    #     run_async(self.page.mouse.wheel(0, delta))
 
     def scroll(self, direction: str = "down", pixels: int = 120, event_name=None):
         for _ in range(2):
             run_async(self.page.mouse.wheel(0, pixels if direction == "down" else -pixels))
             run_async(self.page.wait_for_timeout(120))
 
-    # def scroll(self, direction: str, pixels: int, event_name=None):
-    #     execution_logger.debug(
-    #         "[Playwright] scroll direction=%s pixels=%d",
-    #         direction, pixels
-    #     )
-    #     run_async(self._scroll_async(direction, pixels))
-
-    # async def _scroll_async(self, direction: str, pixels: int):
-    #     if direction == "down":
-    #         await self.page.evaluate(
-    #             "(p) => window.scrollBy(0, p)", pixels
-    #         )
-    #     else:
-    #         await self.page.evaluate(
-    #             "(p) => window.scrollBy(0, -p)", pixels
-    #         )
 
     # =====================================================
     # GETTERS / TERMINATION
@@ -440,7 +418,7 @@ class Playwright(DriverInterface):
     async def _execute_script_async(self, script: str, *args, event_name: Optional[str] = None) -> Any:
         """Async helper for execute_script."""
         if not self.page:
-            raise OpticsError(Code.E0102, "Playwright page not initialized")
+            raise OpticsError(Code.E0102, self.PAGE_NOT_INITIALIZED_MSG)
 
         if event_name and self.event_sdk:
             self.event_sdk.capture_event(event_name)

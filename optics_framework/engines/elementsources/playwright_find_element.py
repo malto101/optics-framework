@@ -47,9 +47,12 @@ class PlaywrightFindElement(ElementSourceInterface):
         page = self._require_page()
         return run_async(page.content())
 
-    def get_interactive_elements(self) -> List[Any]:
+    def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> List[Any]:
         """
         Not supported (use Playwright native locators instead)
+
+        Args:
+            filter_config: Optional list of filter types (not used for this implementation).
         """
         internal_logger.exception(
             "PlaywrightFindElement does not support get_interactive_elements()"
@@ -61,6 +64,43 @@ class PlaywrightFindElement(ElementSourceInterface):
     # --------------------------------------------------
     # Element location
     # --------------------------------------------------
+
+    def _strip_prefix(self, element: str, prefix: str) -> str:
+        """
+        Strip prefix from element string if present (case-insensitive).
+
+        :param element: Element string
+        :param prefix: Prefix to strip (e.g., "xpath=", "text=", "css=")
+        :return: Element string without prefix
+        """
+        if element.lower().startswith(prefix.lower()):
+            eq_index = element.find("=")
+            return element[eq_index + 1:] if eq_index >= 0 else element
+        return element
+
+    def _build_locator(self, page: Any, element: str, element_type: str) -> Optional[Any]:
+        """
+        Build Playwright locator based on element type.
+
+        :param page: Playwright page object
+        :param element: Element selector string
+        :param element_type: Type of element (XPath, Text, CSS, Image)
+        :return: Playwright locator or None
+        """
+        if element_type == "Image":
+            return None
+
+        if element_type == "XPath":
+            xpath_value = self._strip_prefix(element, "xpath=")
+            return page.locator(f"xpath={xpath_value}")
+
+        if element_type == "Text":
+            text_value = self._strip_prefix(element, "text=")
+            return page.get_by_text(text_value, exact=False)
+
+        # CSS / default
+        css_value = self._strip_prefix(element, "css=")
+        return page.locator(css_value)
 
     def locate(self, element: str, index: Optional[int] = None) -> Any:
         """
@@ -83,41 +123,9 @@ class PlaywrightFindElement(ElementSourceInterface):
         element_type = utils.determine_element_type(element)
 
         try:
-            if element_type == "Image":
+            locator = self._build_locator(page, element, element_type)
+            if locator is None:
                 return None
-
-            # XPath
-            if element_type == "XPath":
-                # Strip "xpath=" prefix if present (case-insensitive) to avoid double prefixing
-                if element.lower().startswith("xpath="):
-                    # Find the "=" and strip everything up to and including it
-                    eq_index = element.find("=")
-                    xpath_value = element[eq_index + 1:] if eq_index >= 0 else element
-                else:
-                    xpath_value = element
-                locator = page.locator(f"xpath={xpath_value}")
-
-            # Text
-            elif element_type == "Text":
-                # Strip "text=" prefix if present (case-insensitive) before passing to get_by_text()
-                if element.lower().startswith("text="):
-                    # Find the "=" and strip everything up to and including it
-                    eq_index = element.find("=")
-                    text_value = element[eq_index + 1:] if eq_index >= 0 else element
-                else:
-                    text_value = element
-                locator = page.get_by_text(text_value, exact=False)
-
-            # CSS / default
-            else:
-                # Strip "css=" prefix if present (case-insensitive) (Playwright handles it, but cleaner to strip)
-                if element.lower().startswith("css="):
-                    # Find the "=" and strip everything up to and including it
-                    eq_index = element.find("=")
-                    css_value = element[eq_index + 1:] if eq_index >= 0 else element
-                else:
-                    css_value = element
-                locator = page.locator(css_value)
 
             # Use run_async to await async Playwright methods
             count = run_async(locator.count())
@@ -143,6 +151,31 @@ class PlaywrightFindElement(ElementSourceInterface):
     # --------------------------------------------------
     # Assertions
     # --------------------------------------------------
+
+    def _check_element_found(self, element: str, found: dict) -> bool:
+        """
+        Check if a single element is found and update found dict.
+
+        :param element: Element to check
+        :param found: Dictionary tracking found elements
+        :return: True if element was found (and not previously found)
+        """
+        if not found[element] and self.locate(element):
+            found[element] = True
+            return True
+        return False
+
+    def _check_assertion_complete(self, rule: str, found: dict) -> bool:
+        """
+        Check if assertion is complete based on rule.
+
+        :param rule: Assertion rule ("any" or "all")
+        :param found: Dictionary tracking found elements
+        :return: True if assertion is complete
+        """
+        if rule == "any":
+            return any(found.values())
+        return all(found.values())
 
     def assert_elements(
         self,
@@ -177,12 +210,10 @@ class PlaywrightFindElement(ElementSourceInterface):
         while time.time() - start_time < timeout:
             try:
                 for el in elements:
-                    if not found[el] and self.locate(el):
-                        found[el] = True
-                        if rule == "any":
-                            return True, utils.get_timestamp()
+                    if self._check_element_found(el, found) and rule == "any":
+                        return True, utils.get_timestamp()
 
-                if rule == "all" and all(found.values()):
+                if self._check_assertion_complete(rule, found):
                     return True, utils.get_timestamp()
 
                 time.sleep(0.5)

@@ -513,6 +513,43 @@ class ActionKeyword:
         """
         time.sleep(int(duration))
 
+    def _parse_script_and_args(self, script_or_json: str) -> tuple[str, list]:
+        """
+        Parse script and args from JSON string or return as-is.
+
+        :param script_or_json: The JavaScript code/script command, or a JSON string.
+        :return: Tuple of (script, args)
+        """
+        script = script_or_json
+        args = []
+
+        script_stripped = script_or_json.strip()
+        if not script_stripped.startswith('{'):
+            return script, args
+
+        try:
+            parsed = json.loads(script_or_json)
+            if not isinstance(parsed, dict):
+                return script, args
+
+            script = parsed.get("script", script_or_json)
+            if "args" not in parsed:
+                return script, args
+
+            args_value = parsed["args"]
+            if isinstance(args_value, list) and len(args_value) == 1 and isinstance(args_value[0], dict):
+                args = [args_value[0]]
+            elif isinstance(args_value, dict):
+                args = [args_value]
+            else:
+                args = [args_value] if not isinstance(args_value, list) else args_value
+
+            execution_logger.debug(f'Parsed JSON: script="{script}", args={args}')
+        except json.JSONDecodeError as e:
+            execution_logger.debug(f'Not valid JSON, using as script directly: {e}')
+
+        return script, args
+
     def execute_script(self, script_or_json: str, event_name: Optional[str] = None) -> Any:
         """
         Execute JavaScript/script in the current context.
@@ -535,33 +572,9 @@ class ActionKeyword:
         except Exception as e:
             execution_logger.error(f"Error capturing screenshot: {e}")
 
-        # Parse if it's a JSON string, otherwise use as script directly
-        script = script_or_json
-        args = []
-
-        script_stripped = script_or_json.strip()
-        if script_stripped.startswith('{'):
-            try:
-                parsed = json.loads(script_or_json)
-                if isinstance(parsed, dict):
-                    script = parsed.get("script", script_or_json)
-                    if "args" in parsed:
-                        args_value = parsed["args"]
-                        # If args is a list, unwrap if it contains a single dict
-                        if isinstance(args_value, list) and len(args_value) == 1 and isinstance(args_value[0], dict):
-                            args = [args_value[0]]
-                        elif isinstance(args_value, dict):
-                            args = [args_value]
-                        else:
-                            args = [args_value] if not isinstance(args_value, list) else args_value
-                    execution_logger.debug(f'Parsed JSON: script="{script}", args={args}')
-            except (json.JSONDecodeError, ValueError) as e:
-                # Not valid JSON, use as script directly
-                execution_logger.debug(f'Not valid JSON, using as script directly: {e}')
-                pass
+        script, args = self._parse_script_and_args(script_or_json)
 
         execution_logger.info(f'Executing script: {script[:100]}...')  # Log first 100 chars
-        # Call driver with script and args separately (driver interface still accepts *args internally)
         if args:
             result = self.driver.execute_script(script, *args, event_name=event_name)
         else:

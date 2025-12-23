@@ -13,6 +13,9 @@ from optics_framework.common.execution_tracer import execution_tracer
 from optics_framework.engines.vision_models.base_methods import match_and_annotate
 from optics_framework.common.error import OpticsError, Code
 
+# Constants
+TEXT_DETECTION_NOT_AVAILABLE_MSG = "Text detection is not available."
+
 
 class LocatorStrategy(ABC):
     """Abstract base class for element location strategies."""
@@ -99,10 +102,10 @@ class XPathStrategy(LocatorStrategy):
 
     def assert_elements(self, elements: list, timeout: int = 30, rule: str = 'any') -> Tuple[bool, Optional[str]]:
         try:
-            result, timestamp = self.element_source.assert_elements(elements, timeout, rule)
-            return result, timestamp, None
+            self.element_source.assert_elements(elements, timeout, rule)
+            return True, None
         except Exception:
-            return False, None, None
+            return False, None
 
     @staticmethod
     def supports(element_type: str, element_source: ElementSourceInterface) -> bool:
@@ -124,10 +127,10 @@ class TextElementStrategy(LocatorStrategy):
 
     def assert_elements(self, elements: list, timeout: int = 30, rule: str = 'any') -> Tuple[bool, Optional[str]]:
         try:
-            found, timestamp = self.element_source.assert_elements(elements, timeout, rule)
-            return found, timestamp, None # returning None since there's no annotation available
+            self.element_source.assert_elements(elements, timeout, rule)
+            return True, None # returning None since there's no annotation available
         except Exception:
-            return False, None, None
+            return False, None
 
     @staticmethod
     def supports(element_type: str, element_source: ElementSourceInterface) -> bool:
@@ -149,7 +152,7 @@ class TextDetectionStrategy(LocatorStrategy):
 
     def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int]]:
         if self.text_detection is None:
-            raise OpticsError(Code.E0201, message="Text detection is not available.")
+            raise OpticsError(Code.E0201, message=TEXT_DETECTION_NOT_AVAILABLE_MSG)
         screenshot = self.element_source.capture()
         _, coor, _ = self.text_detection.find_element(screenshot, element, index=index)
         return coor
@@ -166,7 +169,7 @@ class TextDetectionStrategy(LocatorStrategy):
         :return: Coordinates relative to the full screenshot
         """
         if self.text_detection is None:
-            raise OpticsError(Code.E0201, message="Text detection is not available.")
+            raise OpticsError(Code.E0201, message=TEXT_DETECTION_NOT_AVAILABLE_MSG)
         # Capture full screenshot
         full_screenshot = self.element_source.capture()
 
@@ -196,7 +199,7 @@ class TextDetectionStrategy(LocatorStrategy):
 
     def assert_elements(self, elements: list, timeout: int = 30, rule: str = 'any') -> Tuple[bool, Optional[str]]:
         if self.text_detection is None:
-            raise OpticsError(Code.E0201, message="Text detection is not available.")
+            raise OpticsError(Code.E0201, message=TEXT_DETECTION_NOT_AVAILABLE_MSG)
         end_time = time.time() + timeout
         found_status = dict.fromkeys(elements, False)
         result = False

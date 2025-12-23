@@ -93,7 +93,6 @@ class PlaywrightPageSource(ElementSourceInterface):
         internal_logger.error("trying get_page_source _require_page ..............")
         timestamp = utils.get_timestamp()
 
-        # html = run_async(page.content()) # page.content()
         html: str = run_async(page.content())
         internal_logger.debug(
             "[PlaywrightPageSource] Page source fetched, length=%d",
@@ -210,41 +209,51 @@ class PlaywrightPageSource(ElementSourceInterface):
             )
             return None
 
-    def _build_simple_xpath(self, node: etree.Element) -> Optional[str]:
+    def _escape_xpath_value(self, val: str) -> str:
         """
-        Build a simple XPath for locating an element in Playwright.
-        This is a fallback method for getting bounds.
+        Escape single quotes in XPath value.
+
+        :param val: Value to escape
+        :return: Escaped XPath value
         """
-        if node is None or not hasattr(node, "tag"):
-            return None
+        if "'" not in val:
+            return f"'{val}'"
+        # Use concat for values with single quotes
+        parts = val.split("'")
+        return "concat('" + "', \"'\", '".join(parts) + "')"
 
-        tag = node.tag or "*"
-        attrs = node.attrib or {}
+    def _build_xpath_from_attribute(self, tag: str, attr_name: str, attr_value: str) -> str:
+        """
+        Build XPath from a single attribute.
 
-        # Helper to escape single quotes in XPath
-        def escape_xpath_value(val: str) -> str:
-            if "'" not in val:
-                return f"'{val}'"
-            # Use concat for values with single quotes
-            parts = val.split("'")
-            return "concat('" + "', \"'\", '".join(parts) + "')"
+        :param tag: Element tag name
+        :param attr_name: Attribute name
+        :param attr_value: Attribute value
+        :return: XPath string
+        """
+        escaped_value = self._escape_xpath_value(attr_value)
+        return f"//{tag}[@{attr_name}={escaped_value}]"
 
-        # Try id first (most unique)
-        if "id" in attrs and attrs["id"]:
-            escaped_id = escape_xpath_value(attrs["id"])
-            return f"//{tag}[@id={escaped_id}]"
+    def _try_unique_attributes(self, tag: str, attrs: dict) -> Optional[str]:
+        """
+        Try to build XPath from unique attributes (id, data-testid, name).
 
-        # Try data-testid
-        if "data-testid" in attrs and attrs["data-testid"]:
-            escaped_testid = escape_xpath_value(attrs["data-testid"])
-            return f"//{tag}[@data-testid={escaped_testid}]"
+        :param tag: Element tag name
+        :param attrs: Element attributes
+        :return: XPath string or None
+        """
+        for attr_name in ["id", "data-testid", "name"]:
+            if attr_name in attrs and attrs[attr_name]:
+                return self._build_xpath_from_attribute(tag, attr_name, attrs[attr_name])
+        return None
 
-        # Try name
-        if "name" in attrs and attrs["name"]:
-            escaped_name = escape_xpath_value(attrs["name"])
-            return f"//{tag}[@name={escaped_name}]"
+    def _build_hierarchical_path(self, node: etree.Element) -> Optional[str]:
+        """
+        Build hierarchical XPath path with index.
 
-        # Fallback to hierarchical path with index
+        :param node: Element node
+        :return: XPath path string or None
+        """
         path = []
         current = node
         while current is not None and hasattr(current, "tag"):
@@ -263,6 +272,93 @@ class PlaywrightPageSource(ElementSourceInterface):
             current = parent
 
         return "/" + "/".join(path) if path else None
+
+    def _build_simple_xpath(self, node: etree.Element) -> Optional[str]:
+        """
+        Build a simple XPath for locating an element in Playwright.
+        This is a fallback method for getting bounds.
+        """
+        if node is None or not hasattr(node, "tag"):
+            return None
+
+        tag = node.tag or "*"
+        attrs = node.attrib or {}
+
+        # Try unique attributes first
+        xpath = self._try_unique_attributes(tag, attrs)
+        if xpath:
+            return xpath
+
+        # Fallback to hierarchical path with index
+        return self._build_hierarchical_path(node)
+
+    def _try_text_content(self, node: etree.Element) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Try to extract text from node text content or tail.
+
+        :param node: Element node
+        :return: Tuple of (text_value, attribute_used) or (None, None)
+        """
+        text_content = node.text
+        if text_content and text_content.strip():
+            return text_content.strip(), "text"
+
+        if node.tail and node.tail.strip():
+            return node.tail.strip(), "tail"
+
+        return None, None
+
+    def _try_attribute_text(self, attrs: dict, attr_name: str, key: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Try to extract text from a specific attribute.
+
+        :param attrs: Element attributes
+        :param attr_name: Attribute name to check
+        :param key: Key name to return
+        :return: Tuple of (text_value, attribute_used) or (None, None)
+        """
+        value = attrs.get(attr_name, "").strip()
+        if value:
+            return value, key
+        return None, None
+
+    def _try_inner_text(self, node: etree.Element, page: Any) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Try to get innerText via Playwright (slower, but more accurate).
+
+        :param node: Element node
+        :param page: Playwright page object
+        :return: Tuple of (text_value, attribute_used) or (None, None)
+        """
+        try:
+            xpath = self._build_simple_xpath(node)
+            if not xpath:
+                return None, None
+
+            locator = page.locator(f"xpath={xpath}")
+            count = run_async(locator.count())
+            if count > 0:
+                inner_text = run_async(locator.first.inner_text())
+                if inner_text and inner_text.strip():
+                    return inner_text.strip(), "innerText"
+        except Exception as e:
+            internal_logger.debug(f"Failed to get innerText via Playwright: {e}")
+
+        return None, None
+
+    def _try_class_text(self, attrs: dict) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Try to extract text from class attribute (last resort).
+
+        :param attrs: Element attributes
+        :return: Tuple of (text_value, attribute_used) or (None, None)
+        """
+        class_name = attrs.get("class", "").strip()
+        if class_name:
+            first_class = class_name.split()[0]
+            if first_class:
+                return first_class, "class"
+        return None, None
 
     def _extract_display_text(self, node: etree.Element, page: Any) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -284,61 +380,47 @@ class PlaywrightPageSource(ElementSourceInterface):
         attrs = node.attrib or {}
 
         # Try text content from lxml element first (fastest)
-        text_content = node.text
-        if text_content and text_content.strip():
-            return text_content.strip(), "text"
+        text, key = self._try_text_content(node)
+        if text:
+            return text, key
 
-        # Try tail text (text after the element)
-        if node.tail and node.tail.strip():
-            return node.tail.strip(), "tail"
-
-        # Try aria-label
-        aria_label = attrs.get("aria-label", "").strip()
-        if aria_label:
-            return aria_label, "aria-label"
-
-        # Try title
-        title = attrs.get("title", "").strip()
-        if title:
-            return title, "title"
-
-        # Try alt (for images)
-        alt = attrs.get("alt", "").strip()
-        if alt:
-            return alt, "alt"
-
-        # Try placeholder (for inputs)
-        placeholder = attrs.get("placeholder", "").strip()
-        if placeholder:
-            return placeholder, "placeholder"
+        # Try attributes in priority order
+        for attr_name, key_name in [("aria-label", "aria-label"), ("title", "title"),
+                                     ("alt", "alt"), ("placeholder", "placeholder")]:
+            text, key = self._try_attribute_text(attrs, attr_name, key_name)
+            if text:
+                return text, key
 
         # Try to get innerText via Playwright (slower, but more accurate)
-        try:
-            xpath = self._build_simple_xpath(node)
-            if xpath:
-                locator = page.locator(f"xpath={xpath}")
-                count = run_async(locator.count())
-                if count > 0:
-                    inner_text = run_async(locator.first.inner_text())
-                    if inner_text and inner_text.strip():
-                        return inner_text.strip(), "innerText"
-        except Exception as e:
-            internal_logger.debug(f"Failed to get innerText via Playwright: {e}")
+        text, key = self._try_inner_text(node, page)
+        if text:
+            return text, key
 
         # Try id
-        element_id = attrs.get("id", "").strip()
-        if element_id:
-            return element_id, "id"
+        text, key = self._try_attribute_text(attrs, "id", "id")
+        if text:
+            return text, key
 
-        # Try class (last resort, but usually not meaningful)
-        class_name = attrs.get("class", "").strip()
-        if class_name:
-            # Take first class if multiple
-            first_class = class_name.split()[0] if class_name else None
-            if first_class:
-                return first_class, "class"
+        # Try class (last resort)
+        return self._try_class_text(attrs)
 
-        return None, None
+    def _check_filter_type(self, node: etree.Element, filter_type: str) -> bool:
+        """
+        Check if element matches a specific filter type.
+
+        :param node: Element node
+        :param filter_type: Filter type to check
+        :return: True if element matches filter type
+        """
+        filter_checks = {
+            "interactive": self._is_probably_interactive,
+            "buttons": self._is_button,
+            "inputs": self._is_input,
+            "images": self._is_image,
+            "text": self._is_text,
+        }
+        check_func = filter_checks.get(filter_type)
+        return check_func(node) if check_func else False
 
     def _should_include_element(self, node: etree.Element, filter_config: Optional[List[str]]) -> bool:
         """
@@ -360,29 +442,11 @@ class PlaywrightPageSource(ElementSourceInterface):
             return True
 
         # Check each filter type
-        matches_any = False
+        for filter_type in filter_config:
+            if self._check_filter_type(node, filter_type):
+                return True
 
-        if "interactive" in filter_config:
-            if self._is_probably_interactive(node):
-                matches_any = True
-
-        if "buttons" in filter_config:
-            if self._is_button(node):
-                matches_any = True
-
-        if "inputs" in filter_config:
-            if self._is_input(node):
-                matches_any = True
-
-        if "images" in filter_config:
-            if self._is_image(node):
-                matches_any = True
-
-        if "text" in filter_config:
-            if self._is_text(node):
-                matches_any = True
-
-        return matches_any
+        return False
 
     def _is_button(self, node: etree.Element) -> bool:
         """Check if element is a button."""
@@ -491,6 +555,183 @@ class PlaywrightPageSource(ElementSourceInterface):
 
         return False
 
+    def _determine_xpath_uniqueness(self, xpath: str, doc_tree: Any, node: etree.Element) -> Tuple[bool, Optional[int]]:
+        """
+        Evaluate XPath against document and determine uniqueness.
+
+        :param xpath: XPath string to evaluate
+        :param doc_tree: Document tree
+        :param node: Target node
+        :return: Tuple of (is_unique, index_if_not_unique)
+        """
+        try:
+            matches = doc_tree.xpath(xpath)
+        except (etree.XPathError, ValueError, TypeError):
+            return False, None
+
+        if not matches:
+            return False, None
+
+        if len(matches) > 1:
+            try:
+                idx = matches.index(node)
+            except ValueError:
+                idx = 0
+            return False, idx
+
+        return True, None
+
+    def _build_xpath_from_single_attribute(self, tag: str, attrs: dict, attr_name: str, val: Optional[str] = None) -> Optional[str]:
+        """
+        Build XPath from a single attribute.
+
+        :param tag: Element tag name
+        :param attrs: Element attributes
+        :param attr_name: Attribute name
+        :param val: Optional attribute value override
+        :return: XPath string or None
+        """
+        value = val if val is not None else attrs.get(attr_name)
+        if not value:
+            return None
+
+        if attr_name == "class":
+            class_token = value.strip().split()[0]
+            if not class_token:
+                return None
+            token_literal = self._escape_for_xpath_literal(f" {class_token} ")
+            return f"//{tag}[contains(concat(' ', normalize-space(@class), ' '), {token_literal})]"
+
+        return f"//{tag}[@{attr_name}={self._escape_for_xpath_literal(value)}]"
+
+    def _build_xpath_from_attribute_pair(self, tag: str, attrs: dict, a1: str, a2: str) -> Optional[str]:
+        """
+        Build XPath from a pair of attributes.
+
+        :param tag: Element tag name
+        :param attrs: Element attributes
+        :param a1: First attribute name
+        :param a2: Second attribute name
+        :return: XPath string or None
+        """
+        v1, v2 = attrs.get(a1), attrs.get(a2)
+        if not v1 or not v2:
+            return None
+        return f"//{tag}[@{a1}={self._escape_for_xpath_literal(v1)} and @{a2}={self._escape_for_xpath_literal(v2)}]"
+
+    def _build_xpath_from_text(self, tag: str, node: etree.Element) -> Optional[str]:
+        """
+        Build XPath from text content (short text only).
+
+        :param tag: Element tag name
+        :param node: Element node
+        :return: XPath string or None
+        """
+        try:
+            text_content = " ".join(node.itertext()).strip()
+        except Exception:
+            return None
+        if not text_content:
+            return None
+        # Avoid overly long or noisy text selectors
+        if len(text_content) > 80 or "\n" in text_content:
+            return None
+        return f"//{tag}[normalize-space(.)={self._escape_for_xpath_literal(text_content)}]"
+
+    def _resolve_xpath(self, xpath: str, doc_tree: Any, node: etree.Element) -> Optional[str]:
+        """
+        Return unique or semi-unique XPath.
+
+        :param xpath: XPath string to resolve
+        :param doc_tree: Document tree
+        :param node: Target node
+        :return: Resolved XPath string or None
+        """
+        is_unique, idx = self._determine_xpath_uniqueness(xpath, doc_tree, node)
+        if is_unique:
+            return xpath
+        if idx is not None:
+            return f"({xpath})[{idx + 1}]"
+        return None
+
+    def _try_unique_attributes_xpath(self, tag: str, attrs: dict, doc_tree: Any, node: etree.Element) -> Optional[str]:
+        """
+        Try to build XPath from unique attributes.
+
+        :param tag: Element tag name
+        :param attrs: Element attributes
+        :param doc_tree: Document tree
+        :param node: Target node
+        :return: Resolved XPath string or None
+        """
+        unique_attrs = [
+            "id", "data-testid", "data-test", "data-qa", "data-cy",
+            "data-automation", "name",
+        ]
+        for attr in unique_attrs:
+            xpath = self._build_xpath_from_single_attribute(tag, attrs, attr)
+            if xpath:
+                resolved = self._resolve_xpath(xpath, doc_tree, node)
+                if resolved:
+                    return resolved
+        return None
+
+    def _try_attribute_pairs_xpath(self, tag: str, attrs: dict, doc_tree: Any, node: etree.Element) -> Optional[str]:
+        """
+        Try to build XPath from attribute pairs.
+
+        :param tag: Element tag name
+        :param attrs: Element attributes
+        :param doc_tree: Document tree
+        :param node: Target node
+        :return: Resolved XPath string or None
+        """
+        unique_attrs = ["id", "data-testid", "data-test", "data-qa", "data-cy", "data-automation", "name"]
+        pair_candidates = unique_attrs + ["aria-label", "placeholder", "title", "alt", "role", "type"]
+        for i, a1 in enumerate(pair_candidates):
+            for a2 in pair_candidates[i + 1:]:
+                xpath = self._build_xpath_from_attribute_pair(tag, attrs, a1, a2)
+                if xpath:
+                    resolved = self._resolve_xpath(xpath, doc_tree, node)
+                    if resolved:
+                        return resolved
+        return None
+
+    def _try_text_xpath(self, tag: str, node: etree.Element, doc_tree: Any) -> Optional[str]:
+        """
+        Try to build XPath from text content.
+
+        :param tag: Element tag name
+        :param node: Element node
+        :param doc_tree: Document tree
+        :return: Resolved XPath string or None
+        """
+        text_xpath = self._build_xpath_from_text(tag, node)
+        if text_xpath:
+            return self._resolve_xpath(text_xpath, doc_tree, node)
+        return None
+
+    def _try_maybe_unique_attributes_xpath(self, tag: str, attrs: dict, doc_tree: Any, node: etree.Element) -> Optional[str]:
+        """
+        Try to build XPath from maybe-unique attributes.
+
+        :param tag: Element tag name
+        :param attrs: Element attributes
+        :param doc_tree: Document tree
+        :param node: Target node
+        :return: Resolved XPath string or None
+        """
+        maybe_unique_attrs = [
+            "aria-label", "placeholder", "title", "alt", "role", "type", "class",
+        ]
+        for attr in maybe_unique_attrs:
+            xpath = self._build_xpath_from_single_attribute(tag, attrs, attr)
+            if xpath:
+                resolved = self._resolve_xpath(xpath, doc_tree, node)
+                if resolved:
+                    return resolved
+        return None
+
     def get_xpath(self, node: etree.Element) -> str:
         """
         Generate an optimal XPath for a given HTML element.
@@ -509,126 +750,25 @@ class PlaywrightPageSource(ElementSourceInterface):
         attrs = node.attrib or {}
         doc_tree = node.getroottree()
 
-        # Utility: safely escape values for XPath literals
-        def lit(val: str) -> str:
-            return self._escape_for_xpath_literal(val)
-
-        # Evaluate XPath against this node's document and determine uniqueness
-        def determine_xpath_uniqueness(xpath: str):
-            try:
-                matches = doc_tree.xpath(xpath)
-            except (etree.XPathError, ValueError, TypeError):
-                return False, None
-
-            if not matches:
-                return False, None
-
-            if len(matches) > 1:
-                try:
-                    idx = matches.index(node)
-                except ValueError:
-                    idx = 0
-                return False, idx
-
-            return True, None
-
-        # Build XPath from a single attribute
-        def build_xpath_from_attribute(attr_name: str, val: Optional[str] = None):
-            value = val if val is not None else attrs.get(attr_name)
-            if not value:
-                return None
-            if attr_name == "class":
-                # Use first class token to avoid brittle exact class matches
-                class_token = value.strip().split()[0] if value else ""
-                if not class_token:
-                    return None
-                token_literal = lit(f" {class_token} ")
-                return (
-                    f"//{tag}[contains(concat(' ', normalize-space(@class), ' '), {token_literal})]"
-                )
-            return f"//{tag}[@{attr_name}={lit(value)}]"
-
-        # Build XPath from a pair of attributes
-        def build_xpath_from_attribute_pair(a1: str, a2: str):
-            v1, v2 = attrs.get(a1), attrs.get(a2)
-            if not v1 or not v2:
-                return None
-            return f"//{tag}[@{a1}={lit(v1)} and @{a2}={lit(v2)}]"
-
-        # Build XPath from text content (short text only)
-        def build_xpath_from_text():
-            try:
-                text_content = " ".join(node.itertext()).strip()
-            except Exception:
-                return None
-            if not text_content:
-                return None
-            # Avoid overly long or noisy text selectors
-            if len(text_content) > 80 or "\n" in text_content:
-                return None
-            return f"//{tag}[normalize-space(.)={lit(text_content)}]"
-
-        # Helper to return unique or semi-unique XPath
-        def resolve_xpath(xpath: str):
-            is_unique, idx = determine_xpath_uniqueness(xpath)
-            if is_unique:
-                return xpath
-            if idx is not None:
-                return f"({xpath})[{idx + 1}]"
-            return None
-
-        # Attribute priority lists (web-centric)
-        unique_attrs = [
-            "id",
-            "data-testid",
-            "data-test",
-            "data-qa",
-            "data-cy",
-            "data-automation",
-            "name",
-        ]
-        maybe_unique_attrs = [
-            "aria-label",
-            "placeholder",
-            "title",
-            "alt",
-            "role",
-            "type",
-            "class",
-        ]
-
         # Try unique attributes first
-        for attr in unique_attrs:
-            xpath = build_xpath_from_attribute(attr)
-            if xpath:
-                resolved = resolve_xpath(xpath)
-                if resolved:
-                    return resolved
+        xpath = self._try_unique_attributes_xpath(tag, attrs, doc_tree, node)
+        if xpath:
+            return xpath
 
         # Try attribute pairs for better uniqueness
-        pair_candidates = unique_attrs + ["aria-label", "placeholder", "title", "alt", "role", "type"]
-        for i, a1 in enumerate(pair_candidates):
-            for a2 in pair_candidates[i + 1 :]:
-                xpath = build_xpath_from_attribute_pair(a1, a2)
-                if xpath:
-                    resolved = resolve_xpath(xpath)
-                    if resolved:
-                        return resolved
+        xpath = self._try_attribute_pairs_xpath(tag, attrs, doc_tree, node)
+        if xpath:
+            return xpath
 
         # Try short text-based XPath (useful for buttons/links)
-        text_xpath = build_xpath_from_text()
-        if text_xpath:
-            resolved = resolve_xpath(text_xpath)
-            if resolved:
-                return resolved
+        xpath = self._try_text_xpath(tag, node, doc_tree)
+        if xpath:
+            return xpath
 
         # Try maybe-unique attributes
-        for attr in maybe_unique_attrs:
-            xpath = build_xpath_from_attribute(attr)
-            if xpath:
-                resolved = resolve_xpath(xpath)
-                if resolved:
-                    return resolved
+        xpath = self._try_maybe_unique_attributes_xpath(tag, attrs, doc_tree, node)
+        if xpath:
+            return xpath
 
         # Fallback to hierarchical path
         return self._build_hierarchical_xpath(node)
@@ -707,12 +847,13 @@ class PlaywrightPageSource(ElementSourceInterface):
     # Element location
     # ---------------------------------------------------------
 
-    def locate(self, element: str, index: Optional[int] = None) -> Any:
-        page = self._require_page()
+    def _resolve_optics_element(self, element: str) -> tuple[str, str]:
+        """
+        Resolve Optics element name to selector.
 
-        # -------------------------------------------------
-        # 🔑 Resolve Optics element name → selector
-        # -------------------------------------------------
+        :param element: Original element string
+        :return: Tuple of (original_element, resolved_element)
+        """
         original_element = element
 
         if hasattr(self.driver, "optics") and self.driver.optics:
@@ -729,39 +870,50 @@ class PlaywrightPageSource(ElementSourceInterface):
                     element
                 )
 
+        return original_element, element
+
+    def _build_playwright_locator(self, page: Any, element: str, element_type: str) -> Any:
+        """
+        Build Playwright locator based on element type.
+
+        :param page: Playwright page object
+        :param element: Element selector string
+        :param element_type: Type of element (Text, XPath, CSS)
+        :return: Playwright locator
+        """
+        if element_type == "Text":
+            text_value = self._strip_prefix_for_page_source(element, "text=")
+            return page.get_by_text(text_value, exact=False)
+
+        if element_type == "XPath":
+            xpath_value = self._strip_prefix_for_page_source(element, "xpath=")
+            return page.locator(f"xpath={xpath_value}")
+
+        # CSS / default
+        css_value = self._strip_prefix_for_page_source(element, "css=")
+        return page.locator(css_value)
+
+    def _strip_prefix_for_page_source(self, element: str, prefix: str) -> str:
+        """
+        Strip prefix from element string if present (case-insensitive).
+
+        :param element: Element string
+        :param prefix: Prefix to strip (e.g., "xpath=", "text=", "css=")
+        :return: Element string without prefix
+        """
+        if element.lower().startswith(prefix.lower()):
+            eq_index = element.find("=")
+            return element[eq_index + 1:] if eq_index >= 0 else element
+        return element
+
+    def locate(self, element: str, index: Optional[int] = None) -> Any:
+        page = self._require_page()
+
+        original_element, element = self._resolve_optics_element(element)
         element_type = utils.determine_element_type(element)
 
         try:
-            # -------------------------------------------------
-            # Selector strategy
-            # -------------------------------------------------
-            if element_type == "Text":
-                # Strip "text=" prefix if present (case-insensitive) before passing to get_by_text()
-                if element.lower().startswith("text="):
-                    # Find the "=" and strip everything up to and including it
-                    eq_index = element.find("=")
-                    text_value = element[eq_index + 1:] if eq_index >= 0 else element
-                else:
-                    text_value = element
-                locator = page.get_by_text(text_value, exact=False)
-            elif element_type == "XPath":
-                # Strip "xpath=" prefix if present (case-insensitive) to avoid double prefixing
-                if element.lower().startswith("xpath="):
-                    # Find the "=" and strip everything up to and including it
-                    eq_index = element.find("=")
-                    xpath_value = element[eq_index + 1:] if eq_index >= 0 else element
-                else:
-                    xpath_value = element
-                locator = page.locator(f"xpath={xpath_value}")
-            else:
-                # Strip "css=" prefix if present (case-insensitive) (Playwright handles it, but cleaner to strip)
-                if element.lower().startswith("css="):
-                    # Find the "=" and strip everything up to and including it
-                    eq_index = element.find("=")
-                    css_value = element[eq_index + 1:] if eq_index >= 0 else element
-                else:
-                    css_value = element
-                locator = page.locator(css_value)  # CSS
+            locator = self._build_playwright_locator(page, element, element_type)
 
             if index is not None:
                 locator = locator.nth(index)
@@ -793,6 +945,59 @@ class PlaywrightPageSource(ElementSourceInterface):
     # ---------------------------------------------------------
     # Assertions
     # ---------------------------------------------------------
+
+    def _check_single_element_presence(self, page: Any, element: str) -> bool:
+        """
+        Check if a single element is present on the page.
+
+        :param page: Playwright page object
+        :param element: Element selector string
+        :return: True if element is found, False otherwise
+        """
+        try:
+            internal_logger.debug(
+                "[PlaywrightPageSource] Element '%s'",
+                element
+            )
+            element_type = utils.determine_element_type(element)
+            if element_type == "Text":
+                locator = page.get_by_text(element, exact=False)
+            elif element_type == "XPath":
+                locator = page.locator(f"xpath={element}")
+            else:
+                # CSS selector
+                locator = page.locator(element)
+
+            count = run_async(locator.count())
+            return count > 0
+        except Exception as e:
+            internal_logger.debug(
+                "[PlaywrightPageSource] Error checking '%s': %s",
+                element, str(e)
+            )
+            return False
+
+    def _check_elements_batch(self, page: Any, elements: List[str], rule: str) -> Tuple[bool, List[bool]]:
+        """
+        Check a batch of elements and return results.
+
+        :param page: Playwright page object
+        :param elements: List of element selectors
+        :param rule: Assertion rule ("any" or "all")
+        :return: Tuple of (should_return_early, results_list)
+        """
+        results = []
+        for element in elements:
+            found = self._check_single_element_presence(page, element)
+            results.append(found)
+
+            if rule == "any" and found:
+                return True, results
+
+        if rule == "all" and all(results):
+            return True, results
+
+        return False, results
 
     def assert_elements(self, elements, timeout=30, rule="any"):
         """
@@ -827,45 +1032,8 @@ class PlaywrightPageSource(ElementSourceInterface):
         )
 
         while time.time() - start_time < timeout:
-            results = []
-
-            for element in elements:
-                try:
-                    internal_logger.debug(
-                        "testttttt [PlaywrightPageSource] Element '%s'",
-                        element
-                    )
-                    element_type = utils.determine_element_type(element)
-                    if element_type == "Text":
-                        locator = page.get_by_text(element, exact=False)
-                    elif element_type == "XPath":
-                        locator = page.locator(f"xpath={element}")
-                    else:
-                        # CSS selector
-                        locator = page.locator(element)
-
-                    internal_logger.debug(
-                        "[PlaywrightPageSource] Element '%s'",
-                        element
-                    )
-                    # Use run_async to await async Playwright methods
-                    count = run_async(locator.count())
-                    found = count > 0
-                    results.append(found)
-
-                    if rule == "any" and found:
-                        return True, utils.get_timestamp()
-
-                except Exception as e:
-                    internal_logger.debug(
-                        "[PlaywrightPageSource] Error checking '%s': %s",
-                        element, str(e)
-                    )
-                    # Don't call get_page_source() in exception handler as it may also fail
-                    # Just mark as not found
-                    results.append(False)
-
-            if rule == "all" and all(results):
+            should_return, _ = self._check_elements_batch(page, elements, rule)
+            if should_return:
                 return True, utils.get_timestamp()
 
             time.sleep(0.3)
@@ -874,4 +1042,4 @@ class PlaywrightPageSource(ElementSourceInterface):
             "[PlaywrightPageSource] Timeout reached. rule=%s elements=%s",
             rule, elements
         )
-        return  False, utils.get_timestamp()
+        return False, utils.get_timestamp()

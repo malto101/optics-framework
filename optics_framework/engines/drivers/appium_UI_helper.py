@@ -1185,30 +1185,23 @@ class UIHelper:
         if "all" in filter_config:
             return True
 
-        # Check each filter type
-        matches_any = False
+        # Check each filter type - return early if any match
+        if "interactive" in filter_config and self._is_probably_interactive(node):
+            return True
 
-        if "interactive" in filter_config:
-            if self._is_probably_interactive(node):
-                matches_any = True
+        if "buttons" in filter_config and self._is_button(node):
+            return True
 
-        if "buttons" in filter_config:
-            if self._is_button(node):
-                matches_any = True
+        if "inputs" in filter_config and self._is_input(node):
+            return True
 
-        if "inputs" in filter_config:
-            if self._is_input(node):
-                matches_any = True
+        if "images" in filter_config and self._is_image(node):
+            return True
 
-        if "images" in filter_config:
-            if self._is_image(node):
-                matches_any = True
+        if "text" in filter_config and self._is_text(node):
+            return True
 
-        if "text" in filter_config:
-            if self._is_text(node):
-                matches_any = True
-
-        return matches_any
+        return False
 
     def _is_button(self, node: etree.Element) -> bool:
         """Check if element is a button."""

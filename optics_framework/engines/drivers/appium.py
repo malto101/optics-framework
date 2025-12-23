@@ -185,6 +185,61 @@ class Appium(DriverInterface):
         """DriverInterface-compliant getter for Appium session id."""
         return self.get_session_id()
 
+    def _normalize_args(self, args: tuple) -> list:
+        """
+        Normalize args - unwrap lists containing a single dict (common from JSON parsing).
+
+        :param args: Original arguments tuple
+        :return: Normalized arguments list
+        """
+        normalized_args = []
+        for arg in args:
+            if isinstance(arg, list) and len(arg) == 1 and isinstance(arg[0], dict):
+                normalized_args.append(arg[0])
+            else:
+                normalized_args.append(arg)
+        return normalized_args
+
+    def _execute_script_with_args(self, driver: WebDriver, script: str, normalized_args: list) -> Any:
+        """
+        Execute script with normalized arguments.
+
+        :param driver: Appium WebDriver instance
+        :param script: Script to execute
+        :param normalized_args: Normalized arguments list
+        :return: Script execution result
+        """
+        if len(normalized_args) == 0:
+            return driver.execute_script(script)
+        if len(normalized_args) == 1:
+            return driver.execute_script(script, normalized_args[0])
+        return driver.execute_script(script, list(normalized_args))
+
+    def _handle_script_execution_error(self, script: str, e: Exception) -> None:
+        """
+        Handle script execution errors with helpful messages.
+
+        :param script: The script that failed
+        :param e: The exception that occurred
+        :raises OpticsError: For unsupported mobile commands
+        """
+        error_msg = str(e)
+        is_not_implemented = "Method is not implemented" in error_msg or "NotImplementedError" in error_msg
+
+        if is_not_implemented and script.startswith("mobile:"):
+            internal_logger.error(
+                f"Mobile command '{script}' is not supported by the current Appium driver. "
+                f"This command may not be available for UIAutomator2, or the command name may be incorrect. "
+                f"Available mobile commands vary by driver. For pressing keys, consider using press_keycode() method directly."
+            )
+            raise OpticsError(
+                Code.E0401,
+                message=f"Mobile command '{script}' is not supported. The command may not exist for UIAutomator2 driver, "
+                        f"or the driver doesn't support the generic execute command. "
+                        f"For pressing keys, use press_keycode() method instead.",
+                cause=e
+            ) from e
+
     def execute_script(self, script: str, *args, event_name: Optional[str] = None) -> Any:
         """
         Execute JavaScript/script in the current Appium context.
@@ -205,48 +260,15 @@ class Appium(DriverInterface):
         if event_name:
             self.event_sdk.capture_event(event_name)
 
-        # Normalize args - unwrap lists containing a single dict (common from JSON parsing)
-        normalized_args = []
-        for arg in args:
-            # If arg is a list with one dict element, unwrap it
-            if isinstance(arg, list) and len(arg) == 1 and isinstance(arg[0], dict):
-                normalized_args.append(arg[0])
-            else:
-                normalized_args.append(arg)
+        normalized_args = self._normalize_args(args)
 
         try:
-            # Handle args - Appium execute_script accepts a single argument (dict or value)
-            if len(normalized_args) == 0:
-                result = driver.execute_script(script)
-            elif len(normalized_args) == 1:
-                result = driver.execute_script(script, normalized_args[0])
-            else:
-                # Multiple args - pass as a list
-                result = driver.execute_script(script, list(normalized_args))
-
+            result = self._execute_script_with_args(driver, script, normalized_args)
             execution_logger.debug(f"Executed script: {script[:100]}...")  # Log first 100 chars
             internal_logger.debug(f"Script execution result: {result}")
-
             return result
         except Exception as e:
-            error_msg = str(e)
-            # Check if this is the "Method is not implemented" error
-            if "Method is not implemented" in error_msg or "NotImplementedError" in error_msg:
-                # Provide helpful error message for unsupported commands
-                if script.startswith("mobile:"):
-                    internal_logger.error(
-                        f"Mobile command '{script}' is not supported by the current Appium driver. "
-                        f"This command may not be available for UIAutomator2, or the command name may be incorrect. "
-                        f"Available mobile commands vary by driver. For pressing keys, consider using press_keycode() method directly."
-                    )
-                    raise OpticsError(
-                        Code.E0401,
-                        message=f"Mobile command '{script}' is not supported. The command may not exist for UIAutomator2 driver, "
-                                f"or the driver doesn't support the generic execute command. "
-                                f"For pressing keys, use press_keycode() method instead.",
-                        cause=e
-                    ) from e
-            # Re-raise other exceptions as-is
+            self._handle_script_execution_error(script, e)
             raise
 
     def attach_to_session(self, session_id: str, executor_url: Optional[str] = None, event_name: Optional[str] = None) -> WebDriver:

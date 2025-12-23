@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import Optional, Any, List
 import numpy as np
 import cv2
 
@@ -84,7 +84,13 @@ class PlaywrightScreenshot(ElementSourceInterface):
     # Unsupported operations
     # --------------------------------------------------
 
-    def get_interactive_elements(self):
+    def get_interactive_elements(self, filter_config: Optional[List[str]] = None):
+        """
+        Not supported (use PlaywrightPageSource for getting interactive elements).
+
+        Args:
+            filter_config: Optional list of filter types (not used for this implementation).
+        """
         internal_logger.exception(
             "PlaywrightScreenshot does not support getting interactive elements."
         )
