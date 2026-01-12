@@ -1,5 +1,4 @@
-from typing import Optional, Dict, Any, List
-import struct
+from typing import Optional, Dict, Any, List, Literal
 import socket
 import cv2
 import numpy as np
@@ -20,6 +19,12 @@ class CapabilitiesConfig(BaseModel):
     )
     rotation: Optional[str] = Field(
         None, description="Rotation of the image (clockwise/counterclockwise)"
+    )
+    header_size: Literal[4, 8] = Field(
+        8, description="Size of the image length header in bytes (4 or 8)"
+    )
+    byte_order: Literal["little", "big"] = Field(
+        "little", description="Byte order for the header (little or big endian)"
     )
 
     class Config:
@@ -64,6 +69,8 @@ class CameraScreenshot(ElementSourceInterface):
         self.out_width: int = capabilities.out_width
         self.out_height: int = capabilities.out_height
         self.rotation: Optional[str] = capabilities.rotation
+        self.header_size: int = capabilities.header_size
+        self.byte_order: str = capabilities.byte_order
 
         # Initialize webcam or TCP connection
         if self.camera_index is not None:
@@ -205,14 +212,20 @@ class CameraScreenshot(ElementSourceInterface):
             self.sock.sendall(b"screenshot\n")
             internal_logger.debug("Taking screenshot...")
 
-            size_data = self.sock.recv(4)
-            if len(size_data) < 4:
-                internal_logger.error(
-                    "Failed to read the full length of the image data header (less than 4 bytes received)."
-                )
-                raise ValueError("Failed to read the length of the image data.")
+            # Read the image size header (configurable size and byte order)
+            size_data = b""
+            while len(size_data) < self.header_size:
+                chunk = self.sock.recv(self.header_size - len(size_data))
+                if not chunk:
+                    internal_logger.error(
+                        "Connection closed while reading image size header."
+                    )
+                    raise ConnectionError("Connection closed while reading header.")
+                size_data += chunk
 
-            image_length = struct.unpack(">I", size_data)[0]
+            image_length = int.from_bytes(
+                size_data, byteorder=self.byte_order, signed=False
+            )
             internal_logger.debug(f"Expected image data length: {image_length} bytes")
 
             # Initialize a bytearray for the image data
