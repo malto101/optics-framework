@@ -912,6 +912,31 @@ class Optics:
             raise ValueError(INVALID_SETUP)
         self.action_keyword.sleep(cast(str, duration))
 
+    @keyword("Execute Script")
+    @fallback_params
+    def execute_script(
+        self,
+        script_or_json: fallback_str,
+        event_name: Optional[fallback_str] = None,
+    ) -> Any:
+        """
+        Execute JavaScript/script in the current context.
+
+        :param script_or_json: The JavaScript code/script command, or a JSON string containing
+                               {"script": "...", "args": {...}} or {"script": "..."}.
+                               Examples:
+                               - "mobile:pressKey" (plain script)
+                               - '{"script": "mobile:pressKey", "args": {"keycode": 3}}' (JSON with args)
+        :param event_name: Optional event name for tracking.
+        :return: The result of the script execution.
+        """
+        if not self.action_keyword:
+            raise ValueError(INVALID_SETUP)
+        return self.action_keyword.execute_script(
+            script_or_json=cast(str, script_or_json),
+            event_name=cast(Optional[str], event_name),
+        )
+
     ### Verifier Methods ###
     @keyword("Validate Element")
     @fallback_params

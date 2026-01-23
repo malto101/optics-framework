@@ -377,3 +377,30 @@ class SeleniumDriver(DriverInterface):
     def get_driver_session_id(self) -> Optional[str]:
         """Not applicable for Selenium; raise NotImplementedError."""
         raise NotImplementedError("Driver session id is not yet implemented for Selenium driver")
+
+    def execute_script(self, script: str, *args, event_name: Optional[str] = None) -> Any:
+        """
+        Execute JavaScript in the current browser context.
+
+        :param script: The JavaScript code to execute.
+        :type script: str
+        :param *args: Optional arguments to pass to the script.
+        :param event_name: The event triggering the script execution, if any.
+        :type event_name: Optional[str]
+        :return: The result of the script execution.
+        :rtype: Any
+        """
+        if self.driver is None:
+            raise RuntimeError(self.SETUP_NOT_INITIALIZED)
+
+        if event_name:
+            self.event_sdk.capture_event(event_name)
+
+        try:
+            result = self.driver.execute_script(script, *args)
+            internal_logger.debug(f"Executed script: {script[:100]}...")  # Log first 100 chars
+            internal_logger.debug(f"Script execution result: {result}")
+            return result
+        except Exception as e:
+            internal_logger.error(f"Failed to execute script: {e}")
+            raise

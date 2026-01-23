@@ -1,5 +1,6 @@
 from functools import wraps
 import time
+import json
 from typing import Callable, Optional, Any
 from optics_framework.common.logging_config import internal_logger, execution_logger
 from optics_framework.common.optics_builder import OpticsBuilder
@@ -511,3 +512,59 @@ class ActionKeyword:
         :param duration: The duration of the sleep in seconds.
         """
         time.sleep(int(duration))
+
+    def execute_script(self, script_or_json: str, event_name: Optional[str] = None) -> Any:
+        """
+        Execute JavaScript/script in the current context.
+
+        :param script_or_json: The JavaScript code/script command, or a JSON string containing
+                               {"script": "...", "args": {...}} or {"script": "..."}.
+                               Examples:
+                               - "mobile:pressKey" (plain script)
+                               - '{"script": "mobile:pressKey", "args": {"keycode": 3}}' (JSON with args)
+                               - '{"script": "mobile:clear"}' (JSON without args)
+        :type script_or_json: str
+        :param event_name: The event triggering the script execution, if any.
+        :type event_name: Optional[str]
+        :return: The result of the script execution.
+        :rtype: Any
+        """
+        try:
+            screenshot_np = self.strategy_manager.capture_screenshot()
+            utils.save_screenshot(screenshot_np, "execute_script", output_dir=self.execution_dir)
+        except Exception as e:
+            execution_logger.error(f"Error capturing screenshot: {e}")
+
+        # Parse if it's a JSON string, otherwise use as script directly
+        script = script_or_json
+        args = []
+
+        script_stripped = script_or_json.strip()
+        if script_stripped.startswith('{'):
+            try:
+                parsed = json.loads(script_or_json)
+                if isinstance(parsed, dict):
+                    script = parsed.get("script", script_or_json)
+                    if "args" in parsed:
+                        args_value = parsed["args"]
+                        # If args is a list, unwrap if it contains a single dict
+                        if isinstance(args_value, list) and len(args_value) == 1 and isinstance(args_value[0], dict):
+                            args = [args_value[0]]
+                        elif isinstance(args_value, dict):
+                            args = [args_value]
+                        else:
+                            args = [args_value] if not isinstance(args_value, list) else args_value
+                    execution_logger.debug(f'Parsed JSON: script="{script}", args={args}')
+            except (json.JSONDecodeError, ValueError) as e:
+                # Not valid JSON, use as script directly
+                execution_logger.debug(f'Not valid JSON, using as script directly: {e}')
+                pass
+
+        execution_logger.info(f'Executing script: {script[:100]}...')  # Log first 100 chars
+        # Call driver with script and args separately (driver interface still accepts *args internally)
+        if args:
+            result = self.driver.execute_script(script, *args, event_name=event_name)
+        else:
+            result = self.driver.execute_script(script, event_name=event_name)
+        execution_logger.debug(f'Script execution result: {result}')
+        return result

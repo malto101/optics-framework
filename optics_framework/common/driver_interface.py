@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Any
 
 class DriverInterface(ABC):
     """
@@ -260,5 +260,21 @@ class DriverInterface(ABC):
         For non-Appium drivers, raise NotImplementedError.
         :return: The Appium session ID if available, otherwise None.
         :rtype: Optional[str]
+        """
+        pass
+
+    @abstractmethod
+    def execute_script(self, script: str, *args, event_name: Optional[str] = None) -> Any:
+        """
+        Execute JavaScript/script in the current context.
+
+        :param script: The JavaScript code or script command to execute.
+        :type script: str
+        :param *args: Optional arguments to pass to the script.
+        :param event_name: The event triggering the script execution, if any.
+        :type event_name: Optional[str]
+        :return: The result of the script execution.
+        :rtype: Any
+        :raises NotImplementedError: If the method is not implemented in a subclass.
         """
         pass

@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional
+from typing import Optional, Any
 from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeoutError
 from optics_framework.common.driver_interface import DriverInterface
 from optics_framework.common.error import OpticsError, Code
@@ -422,3 +422,44 @@ class Playwright(DriverInterface):
 
     def get_driver_session_id(self):
         return None
+
+    def execute_script(self, script: str, *args, event_name: Optional[str] = None) -> Any:
+        """
+        Execute JavaScript in the current browser context.
+
+        :param script: The JavaScript code to execute.
+        :type script: str
+        :param *args: Optional arguments to pass to the script.
+        :param event_name: The event triggering the script execution, if any.
+        :type event_name: Optional[str]
+        :return: The result of the script execution.
+        :rtype: Any
+        """
+        return run_async(self._execute_script_async(script, *args, event_name=event_name))
+
+    async def _execute_script_async(self, script: str, *args, event_name: Optional[str] = None) -> Any:
+        """Async helper for execute_script."""
+        if not self.page:
+            raise OpticsError(Code.E0102, "Playwright page not initialized")
+
+        if event_name and self.event_sdk:
+            self.event_sdk.capture_event(event_name)
+
+        try:
+            # Playwright's evaluate takes a script and a single argument
+            # If multiple args provided, pass as a list; if one arg, pass as-is; if none, pass None
+            if len(args) == 0:
+                result = await self.page.evaluate(script)
+            elif len(args) == 1:
+                result = await self.page.evaluate(script, args[0])
+            else:
+                # Multiple args - pass as a list
+                result = await self.page.evaluate(script, list(args))
+
+            execution_logger.debug(f"[Playwright] Executed script: {script[:100]}...")  # Log first 100 chars
+            internal_logger.debug(f"[Playwright] Script execution result: {result}")
+
+            return result
+        except Exception as e:
+            internal_logger.error(f"[Playwright] Failed to execute script: {e}")
+            raise OpticsError(Code.E0401, message=f"Failed to execute script: {e}", cause=e) from e

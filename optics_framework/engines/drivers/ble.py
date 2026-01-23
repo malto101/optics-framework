@@ -227,6 +227,23 @@ class BLEDriver(DriverInterface):
         """Not applicable for BLE driver; raise NotImplementedError."""
         raise NotImplementedError("Driver session id is not available for BLE driver")
 
+    def execute_script(self, script: str, *args, event_name: Optional[str] = None) -> Any:
+        """
+        Execute JavaScript/script in the current context.
+
+        BLE driver does not support script execution as it is a hardware driver.
+
+        :param script: The JavaScript code or script command to execute.
+        :type script: str
+        :param *args: Optional arguments to pass to the script.
+        :param event_name: The event triggering the script execution, if any.
+        :type event_name: Optional[str]
+        :return: The result of the script execution.
+        :rtype: Any
+        :raises NotImplementedError: BLE driver does not support script execution.
+        """
+        raise NotImplementedError("BLE driver does not support script execution.")
+
     def translate_coordinates_relative(
         self, button_state: int, x_coor_mic: int, y_coor_mic: int
     ):
