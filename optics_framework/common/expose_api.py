@@ -964,5 +964,7 @@ async def delete_session(session_id: str):
             raise HTTPException(status_code=e.status_code, detail=e.to_payload(include_status=True)) from e
         raise HTTPException(status_code=500, detail=f"Session termination failed: {e}") from e
     session_manager.terminate_session(session_id)
+    # Clean up workspace hash entry to prevent memory leak
+    workspace_hashes.pop(session_id, None)
     internal_logger.info(f"Terminated session: {session_id}")
     return TerminationResponse()

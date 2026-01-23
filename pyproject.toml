@@ -59,6 +59,9 @@ pytest-mock = ">=3.14,<3.16"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs-material = "^9.6.11"
+mkdocstrings = {extras = ["python"], version = "^1.0.2"}
+mkdocs-minify-plugin = "^0.8.0"
+
 
 [tool.poetry.scripts]
 optics = "optics_framework.helper.cli:main"

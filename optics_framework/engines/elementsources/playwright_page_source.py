@@ -736,11 +736,32 @@ class PlaywrightPageSource(ElementSourceInterface):
             # Selector strategy
             # -------------------------------------------------
             if element_type == "Text":
-                locator = page.get_by_text(element, exact=False)
+                # Strip "text=" prefix if present (case-insensitive) before passing to get_by_text()
+                if element.lower().startswith("text="):
+                    # Find the "=" and strip everything up to and including it
+                    eq_index = element.find("=")
+                    text_value = element[eq_index + 1:] if eq_index >= 0 else element
+                else:
+                    text_value = element
+                locator = page.get_by_text(text_value, exact=False)
             elif element_type == "XPath":
-                locator = page.locator(f"xpath={element}")
+                # Strip "xpath=" prefix if present (case-insensitive) to avoid double prefixing
+                if element.lower().startswith("xpath="):
+                    # Find the "=" and strip everything up to and including it
+                    eq_index = element.find("=")
+                    xpath_value = element[eq_index + 1:] if eq_index >= 0 else element
+                else:
+                    xpath_value = element
+                locator = page.locator(f"xpath={xpath_value}")
             else:
-                locator = page.locator(element)  # CSS
+                # Strip "css=" prefix if present (case-insensitive) (Playwright handles it, but cleaner to strip)
+                if element.lower().startswith("css="):
+                    # Find the "=" and strip everything up to and including it
+                    eq_index = element.find("=")
+                    css_value = element[eq_index + 1:] if eq_index >= 0 else element
+                else:
+                    css_value = element
+                locator = page.locator(css_value)  # CSS
 
             if index is not None:
                 locator = locator.nth(index)

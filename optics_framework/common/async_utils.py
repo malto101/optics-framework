@@ -61,7 +61,7 @@ def run_async(coro: Coroutine[Any, Any, Any]):
         # Cancel the coroutine if it's still running to prevent it from continuing
         if not future.done():
             future.cancel()
-        raise OpticsError(Code.E0102, f"Async operation timed out after 120 seconds: {str(e) or 'Operation exceeded timeout limit'}", cause=e)
+        raise OpticsError(Code.E0102, f"Async operation timed out after 15 seconds: {str(e) or 'Operation exceeded timeout limit'}", cause=e)
     except Exception:
         # Cancel the coroutine if it's still running to prevent it from continuing
         if not future.done():
