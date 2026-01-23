@@ -5,6 +5,7 @@ import importlib
 import pkgutil
 import asyncio
 import warnings
+import hashlib
 from itertools import product
 from typing import Optional, Dict, Any, List, Union, cast, Callable
 from fastapi import FastAPI, HTTPException, Query
@@ -27,6 +28,9 @@ from optics_framework.helper.version import VERSION
 
 app = FastAPI(title="Optics Framework API", version="1.0")
 session_manager = SessionManager()
+
+# Store last workspace hash per session for change detection
+workspace_hashes: Dict[str, str] = {}
 
 app.add_middleware(
     CORSMiddleware,
@@ -734,6 +738,28 @@ async def stream_events(session_id: str):
     internal_logger.info(f"Starting event stream for session {session_id}")
     return EventSourceResponse(event_generator(session))
 
+@app.get("/v1/sessions/{session_id}/workspace/stream")
+async def stream_workspace(
+    session_id: str,
+    interval_ms: int = Query(2000, description="Polling interval in milliseconds (minimum 500ms)"),
+    include_source: bool = Query(False, description="Include page source in workspace data"),
+    filter_config: Optional[List[str]] = Query(None, description="Filter types for elements: all, interactive, buttons, inputs, images, text")
+):
+    """
+    Stream workspace data (screenshot, elements, optionally source) for the specified session using Server-Sent Events (SSE).
+    Only emits updates when workspace data actually changes, reducing load on the driver.
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        internal_logger.error(f"Session not found for workspace streaming: {session_id}")
+        raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND)
+
+    # Enforce minimum interval to prevent tight loops
+    interval_seconds = max(0.5, interval_ms / 1000.0)
+
+    internal_logger.info(f"Starting workspace stream for session {session_id}, interval={interval_seconds}s, include_source={include_source}")
+    return EventSourceResponse(workspace_generator(session, interval_seconds, include_source, filter_config))
+
 @app.get("/v1/keywords", response_model=List[KeywordInfo])
 async def list_keywords():
     """
@@ -741,6 +767,130 @@ async def list_keywords():
     """
     return discover_keywords()
 
+
+async def _gather_workspace_data(
+    session: Session,
+    include_source: bool = False,
+    filter_config: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Gather workspace data (screenshot, elements, optionally source) from a session.
+    Returns a dict with screenshot, elements, and optionally source.
+    """
+    try:
+        verifier = session.optics.build(Verifier)
+
+        # Gather screenshot and elements in parallel
+        screenshot_task = asyncio.create_task(
+            asyncio.to_thread(verifier.capture_screenshot)
+        )
+        elements_task = asyncio.create_task(
+            asyncio.to_thread(verifier.get_interactive_elements, filter_config)
+        )
+
+        screenshot, elements = await asyncio.gather(screenshot_task, elements_task)
+
+        workspace_data = {
+            "screenshot": screenshot if screenshot else "",
+            "elements": elements if elements else [],
+            "screenshotFailed": not screenshot or screenshot == ""
+        }
+
+        if include_source:
+            try:
+                source_task = asyncio.create_task(
+                    asyncio.to_thread(verifier.capture_pagesource)
+                )
+                source = await source_task
+                workspace_data["source"] = source if source else ""
+            except Exception as e:
+                internal_logger.warning(f"Failed to capture page source: {e}")
+                workspace_data["source"] = ""
+
+        return workspace_data
+    except Exception as e:
+        internal_logger.error(f"Error gathering workspace data: {e}")
+        return {
+            "screenshot": "",
+            "elements": [],
+            "source": "" if include_source else None,
+            "screenshotFailed": True
+        }
+
+def _compute_workspace_hash(workspace_data: Dict[str, Any]) -> str:
+    """
+    Compute a hash of workspace data for change detection.
+    Uses screenshot and elements, optionally source if included.
+    """
+    # Create a canonical representation for hashing
+    hash_data = {
+        "screenshot": workspace_data.get("screenshot", ""),
+        "elements": json.dumps(workspace_data.get("elements", []), sort_keys=True),
+    }
+    if "source" in workspace_data:
+        hash_data["source"] = workspace_data.get("source", "")
+
+    hash_str = json.dumps(hash_data, sort_keys=True)
+    return hashlib.sha256(hash_str.encode()).hexdigest()
+
+async def workspace_generator(
+    session: Session,
+    interval_seconds: float,
+    include_source: bool = False,
+    filter_config: Optional[List[str]] = None
+):
+    """
+    Generator for streaming workspace updates with change detection.
+    Only emits when workspace data actually changes.
+    """
+    HEARTBEAT_INTERVAL = 15.0  # seconds
+    last_heartbeat = asyncio.get_event_loop().time()
+
+    while True:
+        try:
+            # Check if session still exists
+            if not session_manager.get_session(session.session_id):
+                internal_logger.warning(f"Session {session.session_id} no longer exists, ending workspace stream")
+                break
+
+            # Gather workspace data
+            workspace_data = await _gather_workspace_data(session, include_source, filter_config)
+
+            # Compute hash for change detection
+            current_hash = _compute_workspace_hash(workspace_data)
+            last_hash = workspace_hashes.get(session.session_id)
+
+            # Only emit if data changed
+            if last_hash is None or current_hash != last_hash:
+                workspace_hashes[session.session_id] = current_hash
+                internal_logger.debug(f"Workspace data changed for session {session.session_id}, emitting update")
+                yield {"data": json.dumps(workspace_data)}
+                last_heartbeat = asyncio.get_event_loop().time()
+            else:
+                # No change, check if we need to send heartbeat
+                now = asyncio.get_event_loop().time()
+                if now - last_heartbeat >= HEARTBEAT_INTERVAL:
+                    internal_logger.debug(f"Heartbeat for workspace stream session {session.session_id}")
+                    yield {"data": json.dumps({"type": "heartbeat", "timestamp": now})}
+                    last_heartbeat = now
+
+            # Wait for next interval
+            await asyncio.sleep(interval_seconds)
+
+        except asyncio.CancelledError:
+            internal_logger.warning(f"Workspace stream cancelled for session {session.session_id}")
+            raise
+        except Exception as e:
+            internal_logger.error(f"Error in workspace stream for session {session.session_id}: {e}")
+            yield {"data": json.dumps({
+                "type": "error",
+                "message": str(e),
+                "screenshot": "",
+                "elements": [],
+                "screenshotFailed": True
+            })}
+            # Wait before retrying to avoid tight error loops
+            await asyncio.sleep(interval_seconds)
 
 async def event_generator(session: Session):
     """

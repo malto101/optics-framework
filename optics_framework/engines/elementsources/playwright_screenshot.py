@@ -35,7 +35,7 @@ class PlaywrightScreenshot(ElementSourceInterface):
 
     def capture(self) -> np.ndarray:
         """
-        Capture a screenshot of the current page.
+        Capture a screenshot of the current viewport.
 
         Returns:
             np.ndarray: Screenshot as OpenCV-compatible NumPy array
@@ -45,6 +45,7 @@ class PlaywrightScreenshot(ElementSourceInterface):
     def capture_screenshot_as_numpy(self) -> np.ndarray:
         """
         Captures screenshot via Playwright and converts to NumPy image.
+        Only captures the viewport, not the full page.
 
         Returns:
             numpy.ndarray: Screenshot image
@@ -55,7 +56,7 @@ class PlaywrightScreenshot(ElementSourceInterface):
 
             # Playwright returns raw PNG bytes
             # Use run_async to handle async page.screenshot() if page is from async_api
-            screenshot_bytes = run_async(page.screenshot(full_page=True))
+            screenshot_bytes = run_async(page.screenshot(full_page=False))
 
             internal_logger.debug(
                 "Playwright screenshot bytes length: %d",

@@ -56,7 +56,7 @@ def run_async(coro: Coroutine[Any, Any, Any]):
     loop = _get_or_create_persistent_loop()
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     try:
-        return future.result(timeout=120)  # Increased timeout for browser operations
+        return future.result(timeout=15)
     except (TimeoutError, FutureTimeoutError) as e:
         # Cancel the coroutine if it's still running to prevent it from continuing
         if not future.done():

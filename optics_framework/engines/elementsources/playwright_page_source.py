@@ -496,12 +496,11 @@ class PlaywrightPageSource(ElementSourceInterface):
         Generate an optimal XPath for a given HTML element.
 
         Prioritizes:
-        1. id attribute
-        2. data-testid attribute
-        3. name attribute
-        4. class attribute (if unique)
-        5. aria-label attribute
-        6. Hierarchical path with tag names
+        1. Stable unique attributes (id, data-testid, name, etc.)
+        2. Attribute pairs for semi-uniqueness (fast + reliable)
+        3. Short text-based selectors when safe
+        4. Fallbacks like aria-label, title, placeholder, class token
+        5. Hierarchical path with tag names
         """
         if node is None or not hasattr(node, "tag"):
             return ""
@@ -534,33 +533,102 @@ class PlaywrightPageSource(ElementSourceInterface):
             return True, None
 
         # Build XPath from a single attribute
-        def build_xpath_from_attribute(attr_name: str):
-            val = attrs.get(attr_name)
-            if not val:
+        def build_xpath_from_attribute(attr_name: str, val: Optional[str] = None):
+            value = val if val is not None else attrs.get(attr_name)
+            if not value:
                 return None
-            return f"//{tag}[@{attr_name}={lit(val)}]"
+            if attr_name == "class":
+                # Use first class token to avoid brittle exact class matches
+                class_token = value.strip().split()[0] if value else ""
+                if not class_token:
+                    return None
+                token_literal = lit(f" {class_token} ")
+                return (
+                    f"//{tag}[contains(concat(' ', normalize-space(@class), ' '), {token_literal})]"
+                )
+            return f"//{tag}[@{attr_name}={lit(value)}]"
+
+        # Build XPath from a pair of attributes
+        def build_xpath_from_attribute_pair(a1: str, a2: str):
+            v1, v2 = attrs.get(a1), attrs.get(a2)
+            if not v1 or not v2:
+                return None
+            return f"//{tag}[@{a1}={lit(v1)} and @{a2}={lit(v2)}]"
+
+        # Build XPath from text content (short text only)
+        def build_xpath_from_text():
+            try:
+                text_content = " ".join(node.itertext()).strip()
+            except Exception:
+                return None
+            if not text_content:
+                return None
+            # Avoid overly long or noisy text selectors
+            if len(text_content) > 80 or "\n" in text_content:
+                return None
+            return f"//{tag}[normalize-space(.)={lit(text_content)}]"
+
+        # Helper to return unique or semi-unique XPath
+        def resolve_xpath(xpath: str):
+            is_unique, idx = determine_xpath_uniqueness(xpath)
+            if is_unique:
+                return xpath
+            if idx is not None:
+                return f"({xpath})[{idx + 1}]"
+            return None
+
+        # Attribute priority lists (web-centric)
+        unique_attrs = [
+            "id",
+            "data-testid",
+            "data-test",
+            "data-qa",
+            "data-cy",
+            "data-automation",
+            "name",
+        ]
+        maybe_unique_attrs = [
+            "aria-label",
+            "placeholder",
+            "title",
+            "alt",
+            "role",
+            "type",
+            "class",
+        ]
 
         # Try unique attributes first
-        unique_attrs = ["id", "data-testid", "name"]
         for attr in unique_attrs:
             xpath = build_xpath_from_attribute(attr)
             if xpath:
-                is_unique, idx = determine_xpath_uniqueness(xpath)
-                if is_unique:
-                    return xpath
-                if idx is not None:
-                    return f"({xpath})[{idx + 1}]"
+                resolved = resolve_xpath(xpath)
+                if resolved:
+                    return resolved
+
+        # Try attribute pairs for better uniqueness
+        pair_candidates = unique_attrs + ["aria-label", "placeholder", "title", "alt", "role", "type"]
+        for i, a1 in enumerate(pair_candidates):
+            for a2 in pair_candidates[i + 1 :]:
+                xpath = build_xpath_from_attribute_pair(a1, a2)
+                if xpath:
+                    resolved = resolve_xpath(xpath)
+                    if resolved:
+                        return resolved
+
+        # Try short text-based XPath (useful for buttons/links)
+        text_xpath = build_xpath_from_text()
+        if text_xpath:
+            resolved = resolve_xpath(text_xpath)
+            if resolved:
+                return resolved
 
         # Try maybe-unique attributes
-        maybe_unique_attrs = ["class", "aria-label", "title"]
         for attr in maybe_unique_attrs:
             xpath = build_xpath_from_attribute(attr)
             if xpath:
-                is_unique, idx = determine_xpath_uniqueness(xpath)
-                if is_unique:
-                    return xpath
-                if idx is not None:
-                    return f"({xpath})[{idx + 1}]"
+                resolved = resolve_xpath(xpath)
+                if resolved:
+                    return resolved
 
         # Fallback to hierarchical path
         return self._build_hierarchical_xpath(node)

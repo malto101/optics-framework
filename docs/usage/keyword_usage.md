@@ -14,10 +14,15 @@ These keywords handle interactions with the application, such as clicking, swipi
       - *XPath*: An XPath expression for Appium/Selenium (e.g., `//android.widget.Button[@resource-id="id"]`).
       - *Image*: A filename of an image in `input_templates/` (e.g., "home.png", `${Home_image}`).
     - `repeat` (optional, default=1): Number of times to press the element (integer).
-    - `offset_x` (optional, default=0): Horizontal offset in pixels from the element’s center (integer).
-    - `offset_y` (optional, default=0): Vertical offset in pixels from the element’s center (integer).
+    - `offset_x` (optional, default=0): Horizontal offset in pixels from the element's center (integer).
+    - `offset_y` (optional, default=0): Vertical offset in pixels from the element's center (integer).
+    - `index` (optional, default=0): Index of the element if multiple matches are found (integer, 0-based).
+    - `aoi_x` (optional, default=0): X percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_y` (optional, default=0): Y percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_width` (optional, default=100): Width percentage of Area of Interest (0-100, float).
+    - `aoi_height` (optional, default=100): Height percentage of Area of Interest (0-100, float).
     - `event_name` (optional): A string identifier for logging or triggering events (e.g., "click_home").
-  - **Example**: `Press Element,${Subscriptions_text},2,10,20,click_event`
+  - **Example**: `Press Element,${Subscriptions_text},2,10,20,0,0,0,100,100,click_event`
 
 - **Press By Percentage**
   Presses at percentage-based coordinates on the screen.
@@ -37,16 +42,6 @@ These keywords handle interactions with the application, such as clicking, swipi
     - `event_name` (optional): A string identifier for the press event (e.g., "tap_event").
   - **Example**: `Press By Coordinates,500,800,,tap_event`
 
-- **Press Element With Index**
-  Presses an element (text or image) at a specified index if multiple matches exist.
-  - **Parameters**:
-    - `element`: The target to press:
-      - *Text*: A string to locate via text detection (e.g., "Home").
-      - *Image*: An image filename (e.g., "home.png").
-      - *Note*: XPath is not supported for index-based pressing.
-    - `index` (optional, default=0): The index of the element to press if multiple are found (integer, 0-based).
-    - `event_name` (optional): A string identifier for the press event (e.g., "home_click").
-  - **Example**: `Press Element With Index,${Home_text},1,home_click`
 
 - **Detect And Press**
   Detects an element and presses it if found within a timeout.
@@ -66,8 +61,12 @@ These keywords handle interactions with the application, such as clicking, swipi
       - *Text*: A string (e.g., " Agree").
       - *XPath*: An XPath (e.g., `//android.widget.CheckBox`).
       - *Image*: An image filename (e.g., "checkbox.png").
+    - `aoi_x` (optional, default=0): X percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_y` (optional, default=0): Y percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_width` (optional, default=100): Width percentage of Area of Interest (0-100, float).
+    - `aoi_height` (optional, default=100): Height percentage of Area of Interest (0-100, float).
     - `event_name` (optional): A string identifier for the press event (e.g., "toggle").
-  - **Example**: `Press Checkbox,${checkbox_xpath},toggle`
+  - **Example**: `Press Checkbox,${checkbox_xpath},0,0,100,100,toggle`
 
 - **Press Radio Button** *(Deprecated)*
   Presses a radio button element (use `Press Element` instead).
@@ -76,8 +75,12 @@ These keywords handle interactions with the application, such as clicking, swipi
       - *Text*: A string (e.g., "Option 1").
       - *XPath*: An XPath (e.g., `//android.widget.RadioButton`).
       - *Image*: An image filename (e.g., "radio.png").
+    - `aoi_x` (optional, default=0): X percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_y` (optional, default=0): Y percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_width` (optional, default=100): Width percentage of Area of Interest (0-100, float).
+    - `aoi_height` (optional, default=100): Height percentage of Area of Interest (0-100, float).
     - `event_name` (optional): A string identifier for the press event (e.g., "select").
-  - **Example**: `Press Radio Button,${radio_xpath},select`
+  - **Example**: `Press Radio Button,${radio_xpath},0,0,100,100,select`
 
 - **Select Dropdown Option**
   Selects an option from a dropdown (currently unimplemented).
@@ -131,8 +134,12 @@ These keywords handle interactions with the application, such as clicking, swipi
       - *Image*: An image filename (e.g., "sub.jpeg").
     - `direction`: Swipe direction ("up", "down", "left", "right").
     - `swipe_length`: Distance of the swipe in pixels (integer, e.g., 50).
+    - `aoi_x` (optional, default=0): X percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_y` (optional, default=0): Y percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_width` (optional, default=100): Width percentage of Area of Interest (0-100, float).
+    - `aoi_height` (optional, default=100): Height percentage of Area of Interest (0-100, float).
     - `event_name` (optional): A string identifier for the swipe event (e.g., "swipe_left").
-  - **Example**: `Swipe From Element,${Subscriptions_text},left,50,swipe_left`
+  - **Example**: `Swipe From Element,${Subscriptions_text},left,50,0,0,100,100,swipe_left`
 
 - **Scroll**
   Performs a scroll action in a specified direction.
@@ -162,8 +169,12 @@ These keywords handle interactions with the application, such as clicking, swipi
       - *Image*: An image filename (e.g., "sub.jpeg").
     - `direction`: Scroll direction ("up", "down", "left", "right").
     - `scroll_length`: Distance of the scroll in pixels (integer, e.g., 100).
+    - `aoi_x` (optional, default=0): X percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_y` (optional, default=0): Y percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_width` (optional, default=100): Width percentage of Area of Interest (0-100, float).
+    - `aoi_height` (optional, default=100): Height percentage of Area of Interest (0-100, float).
     - `event_name` (optional): A string identifier for the scroll event (e.g., "scroll_right").
-  - **Example**: `Scroll From Element,${Subscriptions_image},right,100,scroll_right`
+  - **Example**: `Scroll From Element,${Subscriptions_image},right,100,0,0,100,100,scroll_right`
 
 - **Enter Text**
   Enters text into a specified element.
@@ -173,8 +184,12 @@ These keywords handle interactions with the application, such as clicking, swipi
       - *XPath*: An XPath (e.g., `//android.widget.EditText`).
       - *Image*: An image filename (e.g., "search_field.png").
     - `text`: The text to enter (string, e.g., "Hello World").
+    - `aoi_x` (optional, default=0): X percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_y` (optional, default=0): Y percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_width` (optional, default=100): Width percentage of Area of Interest (0-100, float).
+    - `aoi_height` (optional, default=100): Height percentage of Area of Interest (0-100, float).
     - `event_name` (optional): A string identifier for the input event (e.g., "search_input").
-  - **Example**: `Enter Text,${search_field_xpath},Hello World,search_input`
+  - **Example**: `Enter Text,${search_field_xpath},Hello World,0,0,100,100,search_input`
 
 - **Enter Text Direct**
   Enters text without the need of a specified element or input field. Does not support special keys.
@@ -198,8 +213,12 @@ These keywords handle interactions with the application, such as clicking, swipi
       - *XPath*: An XPath (e.g., `//android.widget.EditText`).
       - *Image*: An image filename (e.g., "quantity_field.png").
     - `number`: The number to enter (float or integer, e.g., 42).
+    - `aoi_x` (optional, default=0): X percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_y` (optional, default=0): Y percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_width` (optional, default=100): Width percentage of Area of Interest (0-100, float).
+    - `aoi_height` (optional, default=100): Height percentage of Area of Interest (0-100, float).
     - `event_name` (optional): A string identifier for the input event (e.g., "number_input").
-  - **Example**: `Enter Number,${quantity_field_xpath},42,number_input`
+  - **Example**: `Enter Number,${quantity_field_xpath},42,0,0,100,100,number_input`
 
 - **Press Keycode**
   Presses a specified keycode (e.g., Android keycodes).
@@ -215,8 +234,12 @@ These keywords handle interactions with the application, such as clicking, swipi
       - *Text*: A string (e.g., "Search").
       - *XPath*: An XPath (e.g., `//android.widget.EditText`).
       - *Image*: An image filename (e.g., "search_field.png").
+    - `aoi_x` (optional, default=0): X percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_y` (optional, default=0): Y percentage of Area of Interest top-left corner (0-100, float).
+    - `aoi_width` (optional, default=100): Width percentage of Area of Interest (0-100, float).
+    - `aoi_height` (optional, default=100): Height percentage of Area of Interest (0-100, float).
     - `event_name` (optional): A string identifier for the clear event (e.g., "clear_input").
-  - **Example**: `Clear Element Text,${input_field_xpath},clear_input`
+  - **Example**: `Clear Element Text,${input_field_xpath},0,0,100,100,clear_input`
 
 - **Get Text**
   Retrieves text from a specified element (returns None if not supported).
@@ -279,6 +302,11 @@ These keywords manage application lifecycle operations.
   - **Parameters**: None
   - **Example**: `Get App Version`
 
+- **Get Driver Session Id**
+  Returns the current driver session ID, if available (e.g., Appium session ID).
+  - **Parameters**: None
+  - **Example**: `Get Driver Session Id`
+
 ## Flow Control Keywords
 
 These keywords manage test flow, such as loops and conditions.
@@ -296,19 +324,29 @@ These keywords manage test flow, such as loops and conditions.
     - For count-based:
       - `count`: Number of iterations (integer, e.g., 3).
     - For variable-based:
-      - `var1`, `iterable1`, `var2`, `iterable2`, ...: Pairs of variable names (e.g., `${METHOD}`) and iterables (e.g., `["xpath","text"]` or a JSON string like `"['text','xpath']"`).
+      - `var1`, `iterable1`, `var2`, `iterable2`, ...: Pairs of variable names (e.g., `${METHOD}`) and iterables. Iterables can be:
+        - JSON string arrays: `"['text','xpath']"`
+        - Pipe-separated values: `"text|xpath|image"`
+        - Variables referencing lists: `${List}`
   - **Examples**:
     - Count-based: `Run Loop,Dynamic Launch,3`
-    - Variable-based: `Run Loop,Dynamic Launch,${METHOD},${List}`
+    - Variable-based: `Run Loop,Dynamic Launch,${METHOD},"text|xpath|image"`
+    - Variable-based with JSON: `Run Loop,Dynamic Launch,${METHOD},"['text','xpath']"`
 
 - **Condition**
-  Evaluates conditions and executes the corresponding target module.
+  Evaluates conditions and executes the corresponding target module. Supports both expression-based and module-based conditions.
   - **Parameters**:
-    - `condition1`: A condition expression (string, e.g., `${METHOD} == 'text'`) using variables from `elements.csv`.
+    - `condition1`: A condition expression or module name:
+      - Expression-based: A condition expression (string, e.g., `${METHOD} == 'text'`) using variables from `elements.csv`.
+      - Module-based: A module name (string, e.g., "Check Element Present"). If the module executes successfully, the condition is true.
+      - Inversion: Prefix with `!` to invert the condition (e.g., `!Check Element Present`).
     - `target1`: The module to execute if `condition1` is true (string, e.g., "Interact using text").
     - `condition2`, `target2`, ...: Additional condition-target pairs (optional).
     - `else_target` (optional): The module to execute if no conditions are true (string, e.g., "Interact using images").
-  - **Example**: `Condition,${METHOD} == 'text',Interact using text,${METHOD} == 'xpath',Interact using xpath,Interact using images`
+  - **Examples**:
+    - Expression-based: `Condition,${METHOD} == 'text',Interact using text,${METHOD} == 'xpath',Interact using xpath,Interact using images`
+    - Module-based: `Condition,Check Element Present,Interact using text,Interact using images`
+    - Inverted: `Condition,!Check Element Present,Handle Missing Element,Continue Flow`
 
 - **Read Data**
   Reads data from a file, environment variable, list, or API, with optional query string for filtering/selection.
@@ -333,6 +371,17 @@ These keywords manage test flow, such as loops and conditions.
     - `param1`: The variable to store the result (string, e.g., `${result}`; typically in `${name}` format).
     - `param2`: The expression to evaluate (string, e.g., `${count} + 1`), using variables from `elements.csv`.
   - **Example**: `Evaluate,${result},${count} + 1`
+
+- **Date Evaluate**
+  Evaluates a date expression based on an input date and stores the result in a variable.
+  - **Parameters**:
+    - `param1`: The variable to store the result (string, e.g., `${tomorrow}`; typically in `${name}` format).
+    - `param2`: The input date string (e.g., "04/25/2025" or "2025-04-25"). Format is auto-detected.
+    - `param3`: The date expression to evaluate (e.g., "+1 day", "-2 days", or "today").
+    - `param4` (optional, default="%d %B"): The output format for the evaluated date (e.g., "%d %B" produces "26 April").
+  - **Examples**:
+    - `Date Evaluate,${tomorrow},04/25/2025,+1 day`
+    - `Date Evaluate,${yesterday},2025-04-25,-1 day,%Y-%m-%d`
 
 ## Verification Keywords
 
@@ -373,28 +422,62 @@ These keywords verify elements, screens, and data.
 - **Assert Presence**
   Asserts the presence of one or more elements.
   - **Parameters**:
-    - `elements`: Comma-separated elements to check:
+    - `elements`: Pipe-separated (`|`) elements to check:
       - *Text*: A string (e.g., "Home").
       - *XPath*: An XPath (e.g., `//android.widget.TextView[@text="Home"]`).
       - *Image*: An image filename (e.g., "home.png").
-      - Example: `${Subscriptions_text},${Home_xpath}`.
+      - Example: `${Subscriptions_text}|${Home_xpath}`.
     - `timeout` (optional, default=30): Maximum time in seconds to wait (integer).
     - `rule` (optional, default="any"): Verification rule ("any" or "all").
     - `event_name` (optional): A string identifier for the assertion event (e.g., "verify_screen").
-  - **Example**: `Assert Presence,${Subscriptions_text},${Home_xpath},10,all,verify_screen`
+  - **Example**: `Assert Presence,${Subscriptions_text}|${Home_xpath},10,all,verify_screen`
 
 - **Validate Screen**
-  Verifies the screen by checking element presence (alias for `Assert Presence`).
+  Verifies the screen by checking element presence (alias for `Assert Presence`, but does not fail on error).
   - **Parameters**:
-    - `elements`: Comma-separated elements to verify:
+    - `elements`: Pipe-separated (`|`) elements to verify:
       - *Text*: A string (e.g., "Home").
       - *XPath*: An XPath (e.g., `//android.widget.TextView[@text="Home"]`).
       - *Image*: An image filename (e.g., "home.png").
-      - Example: `${Home_image},${Subscriptions_image}`.
+      - Example: `${Home_image}|${Subscriptions_image}`.
     - `timeout` (optional, default=30): Maximum time in seconds to wait (integer).
     - `rule` (optional, default="any"): Verification rule ("any" or "all").
     - `event_name` (optional): A string identifier for the verification event (e.g., "check_screen").
-  - **Example**: `Validate Screen,${Home_image},${Subscriptions_image},15,any,check_screen`
+  - **Example**: `Validate Screen,${Home_image}|${Subscriptions_image},15,any,check_screen`
+
+- **Capture Screenshot**
+  Captures a screenshot of the current screen.
+  - **Parameters**:
+    - `event_name` (optional): A string identifier for the screenshot capture event (e.g., "screenshot_before_action").
+  - **Returns**: Base64-encoded screenshot string.
+  - **Example**: `Capture Screenshot,screenshot_before_action`
+
+- **Capture Page Source**
+  Captures the page source of the current screen.
+  - **Parameters**:
+    - `event_name` (optional): A string identifier for the page source capture event (e.g., "capture_source").
+  - **Returns**: Page source as a string (XML for Appium, HTML for Selenium/Playwright).
+  - **Example**: `Capture Page Source,capture_source`
+
+- **Get Interactive Elements**
+  Retrieves a list of interactive elements on the current screen.
+  - **Parameters**:
+    - `filter_config` (optional): List of filter types (e.g., `["buttons", "inputs"]`). Valid values:
+      - `"all"`: Show all elements (default when None or empty)
+      - `"interactive"`: Only interactive elements
+      - `"buttons"`: Only button elements
+      - `"inputs"`: Only input/text field elements
+      - `"images"`: Only image elements
+      - `"text"`: Only text elements
+      - Can be combined: `["buttons", "inputs"]`
+  - **Returns**: List of interactive elements with their properties.
+  - **Example**: `Get Interactive Elements,["buttons","inputs"]`
+
+- **Get Screen Elements**
+  Captures a screenshot and retrieves interactive elements for API response.
+  - **Parameters**: None
+  - **Returns**: Dictionary with base64-encoded screenshot and list of elements.
+  - **Example**: `Get Screen Elements`
 
 ## Additional Information
 
@@ -408,6 +491,12 @@ These keywords verify elements, screens, and data.
 !!! tip "Parameters"
     Optional parameters can be left blank in the CSV (e.g., `Press Element,${Home_text},,,click_event` skips `repeat`, `offset_x`, and `offset_y`).
 
+!!! info "Area of Interest (AOI) Parameters"
+    Many keywords support AOI (Area of Interest) parameters (`aoi_x`, `aoi_y`, `aoi_width`, `aoi_height`) to limit element search to a specific region of the screen. These are specified as percentages (0-100):
+    - `aoi_x`, `aoi_y`: Top-left corner coordinates (default: 0, 0)
+    - `aoi_width`, `aoi_height`: Width and height of the region (default: 100, 100)
+    - When AOI is used, the framework will annotate screenshots with the search region for debugging.
+
 !!! warning "Deprecated Keywords"
     Keywords marked with *(Deprecated)* (e.g., `Press Checkbox`) should be avoided in new tests as they may be removed in future versions. Use alternatives like `Press Element` instead.
 
@@ -415,7 +504,7 @@ These keywords verify elements, screens, and data.
     Some keywords (e.g., `Select Dropdown Option`) are placeholders and not yet functional. They are included for future compatibility.
 
 !!! info "Usage in CSV"
-    Keywords are used in the `module_step` column of `test_modules.csv`, with parameters in subsequent columns (e.g., `param_1`, `param_2`, ...).
+    Keywords are used in the `module_step` column of `test_modules.csv`, with parameters in subsequent columns (e.g., `param_1`, `param_2`, ...). When using pipe-separated values (e.g., in `Assert Presence`), use the pipe character (`|`) to separate elements.
 
 !!! tip "Variables"
     Parameters like `${Home_text}` reference values from `elements.csv`, allowing reusable element definitions.

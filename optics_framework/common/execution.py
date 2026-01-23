@@ -1,5 +1,6 @@
 from uuid import uuid4
 import asyncio
+import os
 import json
 import inspect
 from abc import ABC, abstractmethod
@@ -255,6 +256,7 @@ class ExecutionEngine:
 
     def __init__(self, session_manager: SessionManager):
         self.session_manager = session_manager
+        self._event_drain_timeout_s = float(os.getenv("OPTICS_EVENT_DRAIN_TIMEOUT_S", "2.0"))
 
     async def execute(self, params: ExecutionParams) -> Any:
         # Get session-specific event manager
@@ -383,7 +385,16 @@ class ExecutionEngine:
                 # Wait for event queue to drain
                 internal_logger.debug(
                     "Event queue size before drain: %d", event_manager.event_queue.qsize())
+                drain_deadline = asyncio.get_event_loop().time() + self._event_drain_timeout_s
                 while event_manager.event_queue.qsize() > 0:
+                    if asyncio.get_event_loop().time() >= drain_deadline:
+                        internal_logger.warning(
+                            "Event drain timed out after %.2fs; proceeding with shutdown. "
+                            "Remaining events: %d",
+                            self._event_drain_timeout_s,
+                            event_manager.event_queue.qsize(),
+                        )
+                        break
                     internal_logger.debug(
                         "Waiting for %d events to process", event_manager.event_queue.qsize())
                     await asyncio.sleep(0.1)

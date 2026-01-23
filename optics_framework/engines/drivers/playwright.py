@@ -1,11 +1,12 @@
 import asyncio
 from typing import Optional
-from playwright.async_api import async_playwright, Page
+from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeoutError
 from optics_framework.common.driver_interface import DriverInterface
 from optics_framework.common.error import OpticsError, Code
 from optics_framework.common.eventSDK import EventSDK
 from optics_framework.common.logging_config import internal_logger, execution_logger
 from optics_framework.common.async_utils import run_async
+from optics_framework.common import utils
 
 
 class Playwright(DriverInterface):
@@ -47,7 +48,7 @@ class Playwright(DriverInterface):
 
             if app_identifier:
                 execution_logger.info("[Playwright] Navigating to %s", app_identifier)
-                await self.page.goto(app_identifier, timeout=60000)
+                await self._navigate_to(app_identifier)
 
             if event_name and self.event_sdk:
                 self.event_sdk.capture_event(event_name)
@@ -65,11 +66,93 @@ class Playwright(DriverInterface):
             internal_logger.error("[Playwright] Launch failed", exc_info=True)
             raise OpticsError(Code.E0102, str(e), cause=e)
 
+    async def _launch_other_app_async(self, app_name: str, event_name=None):
+        """
+        Launch another app in a new tab (not a new window).
+        Creates a new page in the existing browser context.
+        """
+        try:
+            if self._context is None:
+                # If no context exists, initialize browser first
+                internal_logger.info("[Playwright] No existing context, initializing browser")
+                await self._launch_app_async(None, event_name)
+
+            # Create a new page (tab) in the existing context
+            internal_logger.info("[Playwright] Creating new tab for %s", app_name)
+            self.page = await self._context.new_page()
+
+            # Navigate to the new URL
+            if app_name:
+                execution_logger.info("[Playwright] Navigating to %s", app_name)
+                await self._navigate_to(app_name)
+
+            if event_name and self.event_sdk:
+                self.event_sdk.capture_event(event_name)
+
+            internal_logger.info("[Playwright] Launched other app in new tab")
+
+        except Exception as e:
+            internal_logger.error("[Playwright] Failed to launch other app: %s", e, exc_info=True)
+            raise OpticsError(Code.E0102, str(e), cause=e)
+
     def launch_other_app(self, app_name: str, event_name=None):
-        return run_async(self._launch_app_async(app_name, event_name))
+        return run_async(self._launch_other_app_async(app_name, event_name))
+
+    async def _navigate_to(self, url: str):
+        """
+        Navigate to a URL with configurable timeout and wait condition.
+        If navigation times out but the URL is reached, continue with a warning.
+        """
+        if not self.page:
+            raise OpticsError(Code.E0102, "Playwright page not initialized")
+
+        timeout_ms = int(self.config.get("navigation_timeout_ms", 60000))
+        wait_until = self.config.get("navigation_wait_until", "domcontentloaded")
+
+        try:
+            await self.page.goto(url, timeout=timeout_ms, wait_until=wait_until)
+        except PlaywrightTimeoutError as e:
+            current_url = self.page.url or ""
+            if current_url and url in current_url:
+                internal_logger.warning(
+                    "[Playwright] Navigation timed out (wait_until=%s, timeout_ms=%s) "
+                    "but page URL is already set. Continuing.",
+                    wait_until,
+                    timeout_ms,
+                )
+                return
+            raise OpticsError(Code.E0102, str(e), cause=e)
 
     def get_app_version(self) -> str:
         return "get_app_version not supported for Playwright"
+
+
+    def _normalize_locator(self, element):
+        """
+        Normalize a selector string for Playwright locator.
+
+        If element is already a Playwright locator object, return it as-is.
+        If element is a string and is an XPath, prefix it with 'xpath='.
+        Otherwise, return the string as-is.
+
+        Args:
+            element: String selector or Playwright locator object
+
+        Returns:
+            String selector (with xpath= prefix if needed) or locator object
+        """
+        # If it's already a locator object, return as-is
+        if not isinstance(element, str):
+            return element
+
+        # Check if it's an XPath selector
+        element_type = utils.determine_element_type(element)
+        if element_type == "XPath":
+            # If it doesn't already have the xpath= prefix, add it
+            if not element.lower().startswith("xpath="):
+                return f"xpath={element}"
+
+        return element
 
     # =====================================================
     # PRESS / CLICK
@@ -81,7 +164,8 @@ class Playwright(DriverInterface):
     async def _press_element_async(self, element, repeat, event_name):
         # Handle both string selectors and Playwright locator objects
         if isinstance(element, str):
-            locator = self.page.locator(element)
+            normalized = self._normalize_locator(element)
+            locator = self.page.locator(normalized)
         else:
             # element is already a Playwright locator object
             locator = element
@@ -144,14 +228,16 @@ class Playwright(DriverInterface):
         run_async(self.page.keyboard.type(text))
 
     def enter_text_element(self, element: str, text: str, event_name=None):
-        run_async(self.page.locator(element).fill(text))
+        normalized = self._normalize_locator(element)
+        run_async(self.page.locator(normalized).fill(text))
 
     def clear_text(self, event_name=None):
         run_async(self.page.keyboard.press("Control+A"))
         run_async(self.page.keyboard.press("Backspace"))
 
     def clear_text_element(self, element: str, event_name=None):
-        run_async(self.page.locator(element).fill(""))
+        normalized = self._normalize_locator(element)
+        run_async(self.page.locator(normalized).fill(""))
 
     # =====================================================
     # SCROLL / SWIPE
@@ -196,7 +282,8 @@ class Playwright(DriverInterface):
             ) from e
 
     async def _swipe_element_async(self, element: str, direction: str, swipe_length: int):
-        locator = self.page.locator(element)
+        normalized = self._normalize_locator(element)
+        locator = self.page.locator(normalized)
         await locator.wait_for(state="visible", timeout=10000)
 
         # Calculate scroll delta
@@ -253,7 +340,8 @@ class Playwright(DriverInterface):
     # =====================================================
 
     def get_text_element(self, element: str) -> str:
-        return run_async(self.page.locator(element).inner_text())
+        normalized = self._normalize_locator(element)
+        return run_async(self.page.locator(normalized).inner_text())
 
     def force_terminate_app(self, app_name: str, event_name=None):
         raise NotImplementedError("force_terminate_app not supported")
