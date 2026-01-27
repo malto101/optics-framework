@@ -111,6 +111,20 @@ class SeleniumPageSource(ElementSourceInterface):
         except Exception as e:
             internal_logger.error(f"Unexpected error locating element {element}: {e}")
             return None
+
+    def get_element_bboxes(
+        self, elements: list
+    ) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
+        """Return bounding boxes for each element using WebElement location and size."""
+
+        def locate_safe(element: str) -> Any:
+            try:
+                return self.locate(element)
+            except Exception:
+                return None
+
+        return utils.bboxes_from_webelements(locate_safe, elements)
+
     def _find_element_by_any(self, driver: Any, locator_value: str) -> Any:
         """
         Try locating an element using all known Selenium strategies.

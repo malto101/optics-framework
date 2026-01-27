@@ -129,6 +129,17 @@ class DryRunExecutor(Executor):
         ))
 
 
+def _deserialize_single_param(param_value: str, param_type: Any) -> Any:
+    """Deserialize one param when its type is a list; otherwise return as-is."""
+    if param_type is None or not _is_list_type(param_type):
+        return param_value
+    try:
+        parsed = json.loads(param_value)
+        return parsed if isinstance(parsed, list) else param_value
+    except (json.JSONDecodeError, TypeError):
+        return param_value
+
+
 def _deserialize_params(method: Callable[..., Any], params: List[str]) -> List[Any]:
     """
     Deserialize parameters based on method signature.
@@ -143,28 +154,10 @@ def _deserialize_params(method: Callable[..., Any], params: List[str]) -> List[A
     """
     sig = inspect.signature(method)
     param_types = [p.annotation for p in sig.parameters.values() if p.name != "self"]
-
-    deserialized = []
-    for i, param_value in enumerate(params):
-        if i < len(param_types):
-            param_type = param_types[i]
-            if _is_list_type(param_type):
-                # Try to deserialize JSON string back to list
-                try:
-                    deserialized_value = json.loads(param_value)
-                    if isinstance(deserialized_value, list):
-                        deserialized.append(deserialized_value)
-                    else:
-                        deserialized.append(param_value)
-                except (json.JSONDecodeError, TypeError):
-                    # If it's not valid JSON, pass through as-is
-                    deserialized.append(param_value)
-            else:
-                deserialized.append(param_value)
-        else:
-            deserialized.append(param_value)
-
-    return deserialized
+    return [
+        _deserialize_single_param(params[i], param_types[i] if i < len(param_types) else None)
+        for i in range(len(params))
+    ]
 
 
 class KeywordExecutor(Executor):
@@ -251,6 +244,20 @@ class RunnerFactory:
         return runner
 
 
+def _execution_event(
+    session_id: str, status: EventStatus, message: str
+) -> Event:
+    """Build a standard execution Event."""
+    return Event(
+        entity_type="execution",
+        entity_id=session_id,
+        name="Execution",
+        status=status,
+        message=message,
+        extra={"session_id": session_id},
+    )
+
+
 class ExecutionEngine:
     """Orchestrates execution."""
 
@@ -258,11 +265,13 @@ class ExecutionEngine:
         self.session_manager = session_manager
         self._event_drain_timeout_s = float(os.getenv("OPTICS_EVENT_DRAIN_TIMEOUT_S", "2.0"))
 
-    async def execute(self, params: ExecutionParams) -> Any:
-        # Get session-specific event manager
-        event_manager = get_event_manager(params.session_id)
-
-        session = self.session_manager.get_session(params.session_id)
+    async def _validate_execution_params(
+        self,
+        session: Optional[Session],
+        params: ExecutionParams,
+        event_manager: EventManager,
+    ) -> None:
+        """Validate session and test cases; publish errors and raise if invalid."""
         if not session:
             await event_manager.publish_event(Event(
                 entity_type="session",
@@ -270,132 +279,126 @@ class ExecutionEngine:
                 name="Session",
                 status=EventStatus.ERROR,
                 message="Session not found",
-                extra={"session_id": params.session_id}
+                extra={"session_id": params.session_id},
             ))
             raise OpticsError(Code.E0702, message="Session not found")
-
         if params.mode in ("batch", "dry_run") and not session.test_cases:
-            await event_manager.publish_event(Event(
-                entity_type="execution",
-                entity_id=params.session_id,
-                name="Execution",
-                status=EventStatus.ERROR,
-                message="Test cases are required",
-                extra={"session_id": params.session_id}
-            ))
+            await event_manager.publish_event(
+                _execution_event(params.session_id, EventStatus.ERROR, "Test cases are required")
+            )
             raise OpticsError(Code.E0702, message="Test cases are required")
 
-        event_manager.start()
+    async def _create_executor(
+        self,
+        params: ExecutionParams,
+        session: Session,
+        event_manager: EventManager,
+    ) -> Executor:
+        """Create the mode-specific executor; publish errors and raise on failure."""
+        if params.mode == "batch":
+            return BatchExecutor(test_case=session.test_cases, event_manager=event_manager)
+        if params.mode == "dry_run":
+            return DryRunExecutor(test_case=session.test_cases, event_manager=event_manager)
+        if params.mode == "keyword":
+            return await self._create_keyword_executor(params, event_manager)
+        await event_manager.publish_event(
+            _execution_event(params.session_id, EventStatus.ERROR, f"Unknown mode: {params.mode}")
+        )
+        raise OpticsError(Code.E0702, message=f"Unknown mode: {params.mode}")
 
+    async def _create_keyword_executor(
+        self, params: ExecutionParams, event_manager: EventManager
+    ) -> Executor:
+        """Create KeywordExecutor; publish errors and raise if keyword missing or creation fails."""
+        if not params.keyword:
+            await event_manager.publish_event(
+                _execution_event(params.session_id, EventStatus.ERROR, "Keyword mode requires a keyword")
+            )
+            raise OpticsError(Code.E0403, message="Keyword mode requires a keyword")
+        try:
+            return KeywordExecutor(params.keyword, params.params, event_manager=event_manager)
+        except Exception as e:
+            await event_manager.publish_event(
+                _execution_event(
+                    params.session_id,
+                    EventStatus.ERROR,
+                    f"Failed to create keyword executor: {str(e)}",
+                )
+            )
+            raise OpticsError(Code.E0401, message=f"Failed to create keyword executor: {str(e)}") from e
+
+    async def _run_executor(
+        self,
+        executor: Executor,
+        session: Session,
+        runner: Runner,
+        event_manager: EventManager,
+        params: ExecutionParams,
+    ) -> Any:
+        """Run the executor and return result; publish error and raise on failure."""
+        try:
+            return await executor.execute(session, runner)
+        except Exception as e:
+            await event_manager.publish_event(
+                _execution_event(params.session_id, EventStatus.ERROR, f"Execution failed: {str(e)}")
+            )
+            raise OpticsError(Code.E0701, message=f"Execution failed: {str(e)}") from e
+
+    async def _drain_events_and_shutdown(self, event_manager: EventManager) -> None:
+        """Wait for event queue to drain (with timeout), then shutdown."""
+        internal_logger.debug("Event queue size before drain: %d", event_manager.event_queue.qsize())
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + self._event_drain_timeout_s
+        while event_manager.event_queue.qsize() > 0:
+            if loop.time() >= deadline:
+                internal_logger.warning(
+                    "Event drain timed out after %.2fs; proceeding with shutdown. "
+                    "Remaining events: %d",
+                    self._event_drain_timeout_s,
+                    event_manager.event_queue.qsize(),
+                )
+                break
+            internal_logger.debug("Waiting for %d events to process", event_manager.event_queue.qsize())
+            await asyncio.sleep(0.1)
+        event_manager.shutdown()
+
+    async def execute(self, params: ExecutionParams) -> Any:
+        event_manager = get_event_manager(params.session_id)
+        session = self.session_manager.get_session(params.session_id)
+        await self._validate_execution_params(session, params, event_manager)
+        if session is None:
+            raise RuntimeError("session must not be None after _validate_execution_params")
+
+        event_manager.start()
         use_printer = params.use_printer
         internal_logger.debug(
-            "Using printer: %s for runner: %s", 'TreeResultPrinter' if use_printer else 'NullResultPrinter', params.runner_type)
-
-        # Use minimal runner for keyword mode
-        if params.mode == "keyword":
-            runner_type = "keyword_runner"
-        else:
-            runner_type = params.runner_type
+            "Using printer: %s for runner: %s",
+            "TreeResultPrinter" if use_printer else "NullResultPrinter",
+            params.runner_type,
+        )
+        runner_type = "keyword_runner" if params.mode == "keyword" else params.runner_type
 
         with LoggerContext(params.session_id):
             runner = RunnerFactory.create_runner(
-                session,
-                runner_type,
-                use_printer,
-                event_manager=event_manager
+                session, runner_type, use_printer, event_manager=event_manager
             )
-            if hasattr(runner, 'result_printer') and runner.result_printer and use_printer:
+            if hasattr(runner, "result_printer") and runner.result_printer and use_printer:
                 internal_logger.debug("Starting result printer live display")
                 runner.result_printer.start_live()
 
             try:
-                await event_manager.publish_event(Event(
-                    entity_type="execution",
-                    entity_id=params.session_id,
-                    name="Execution",
-                    status=EventStatus.RUNNING,
-                    message=f"Starting {params.mode} execution",
-                    extra={"session_id": params.session_id}
-                ))
-                if params.mode == "batch":
-                    executor = BatchExecutor(test_case=session.test_cases, event_manager=event_manager)
-                elif params.mode == "dry_run":
-                    executor = DryRunExecutor(test_case=session.test_cases, event_manager=event_manager)
-                elif params.mode == "keyword":
-                    if not params.keyword:
-                        await event_manager.publish_event(Event(
-                            entity_type="execution",
-                            entity_id=params.session_id,
-                            name="Execution",
-                            status=EventStatus.ERROR,
-                            message="Keyword mode requires a keyword",
-                            extra={"session_id": params.session_id}
-                        ))
-                        raise OpticsError(Code.E0403, message="Keyword mode requires a keyword")
-                    try:
-                        executor = KeywordExecutor(params.keyword, params.params, event_manager=event_manager)
-                    except Exception as e:
-                        await event_manager.publish_event(Event(
-                            entity_type="execution",
-                            entity_id=params.session_id,
-                            name="Execution",
-                            status=EventStatus.ERROR,
-                            message=f"Failed to create keyword executor: {str(e)}",
-                            extra={"session_id": params.session_id}
-                        ))
-                        raise OpticsError(Code.E0401, message=f"Failed to create keyword executor: {str(e)}") from e
-                else:
-                    await event_manager.publish_event(Event(
-                        entity_type="execution",
-                        entity_id=params.session_id,
-                        name="Execution",
-                        status=EventStatus.ERROR,
-                        message=f"Unknown mode: {params.mode}",
-                        extra={"session_id": params.session_id}
-                    ))
-                    raise OpticsError(Code.E0702, message=f"Unknown mode: {params.mode}")
-                try:
-                    result =  await executor.execute(session, runner)
-                    return result
-                except Exception as e:
-                    await event_manager.publish_event(Event(
-                        entity_type="execution",
-                        entity_id=params.session_id,
-                        name="Execution",
-                        status=EventStatus.ERROR,
-                        message=f"Execution failed: {str(e)}",
-                        extra={"session_id": params.session_id}
-                    ))
-                    raise OpticsError(Code.E0701, message=f"Execution failed: {str(e)}") from e
+                await event_manager.publish_event(
+                    _execution_event(params.session_id, EventStatus.RUNNING, f"Starting {params.mode} execution")
+                )
+                executor = await self._create_executor(params, session, event_manager)
+                return await self._run_executor(executor, session, runner, event_manager, params)
             except Exception as e:
-                await event_manager.publish_event(Event(
-                    entity_type="execution",
-                    entity_id=params.session_id,
-                    name="Execution",
-                    status=EventStatus.FAIL,
-                    message=f"Execution failed: {str(e)}",
-                    extra={"session_id": params.session_id}
-                ))
-                internal_logger.error(f"Execution error in session {params.session_id}: {e}")
+                await event_manager.publish_event(
+                    _execution_event(params.session_id, EventStatus.FAIL, f"Execution failed: {str(e)}")
+                )
+                internal_logger.error("Execution error in session %s: %s", params.session_id, e)
                 raise OpticsError(Code.E0701, message=f"Execution failed: {str(e)}") from e
             finally:
-                if hasattr(runner, 'result_printer') and runner.result_printer:
-                    internal_logger.debug(
-                        "Stopping result printer live display")
-                # Wait for event queue to drain
-                internal_logger.debug(
-                    "Event queue size before drain: %d", event_manager.event_queue.qsize())
-                drain_deadline = asyncio.get_event_loop().time() + self._event_drain_timeout_s
-                while event_manager.event_queue.qsize() > 0:
-                    if asyncio.get_event_loop().time() >= drain_deadline:
-                        internal_logger.warning(
-                            "Event drain timed out after %.2fs; proceeding with shutdown. "
-                            "Remaining events: %d",
-                            self._event_drain_timeout_s,
-                            event_manager.event_queue.qsize(),
-                        )
-                        break
-                    internal_logger.debug(
-                        "Waiting for %d events to process", event_manager.event_queue.qsize())
-                    await asyncio.sleep(0.1)
-                event_manager.shutdown()
+                if hasattr(runner, "result_printer") and runner.result_printer:
+                    internal_logger.debug("Stopping result printer live display")
+                await self._drain_events_and_shutdown(event_manager)

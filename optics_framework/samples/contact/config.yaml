@@ -14,13 +14,13 @@ elements_sources:
   - appium_find_element:
       enabled: true
   - appium_page_source:
-      enabled: false
+      enabled: true
   - appium_screenshot:
       enabled: true
 
 text_detection:
   - easyocr:
-      enabled: false
+      enabled: true
 
 
 image_detection:

@@ -1,6 +1,6 @@
 from typing import Optional, Any, Tuple, List
 import time
-from lxml import etree # type: ignore
+from lxml import etree  # type: ignore
 from appium.webdriver.webdriver import WebDriver
 from appium.webdriver.common.appiumby import AppiumBy
 from optics_framework.common.logging_config import internal_logger
@@ -125,6 +125,18 @@ class AppiumPageSource(ElementSourceInterface):
                 raise RuntimeError(APPIUM_NOT_INITIALISED_MSG)
         raise RuntimeError("Unknown element type.")
 
+    def get_element_bboxes(
+        self, elements: List[str]
+    ) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
+        """Return bounding boxes for each element using WebElement location and size."""
+
+        def locate_safe(element: str) -> Any:
+            try:
+                return self.locate(element)
+            except Exception:
+                return None
+
+        return utils.bboxes_from_webelements(locate_safe, elements)
 
     def locate_using_index(self, element, index, strategy=None) -> Optional[Any]:
         if self.driver is not None and hasattr(self.driver, "ui_helper") and self.driver.ui_helper is not None:

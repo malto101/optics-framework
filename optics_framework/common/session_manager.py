@@ -12,6 +12,41 @@ from optics_framework.common.error import OpticsError, Code
 from optics_framework.common.events import get_event_manager_registry
 
 
+def _to_dict_list(configs: list) -> list:
+    """Convert list of config item dicts to dicts, using model_dump() where available."""
+    result = []
+    for item in configs:
+        new_item = {}
+        for name, details in item.items():
+            new_item[name] = details.model_dump() if hasattr(details, "model_dump") else details
+        result.append(new_item)
+    return result
+
+
+def _get_enabled_config_list(config: object, attr_name: str) -> list:
+    """Return enabled config items for the given attribute as a list of dicts."""
+    all_configs = getattr(config, attr_name, [])
+    enabled = [
+        item for item in all_configs
+        for _name, details in item.items()
+        if details.enabled
+    ]
+    return _to_dict_list(enabled)
+
+
+def _maybe_setup_junit(
+    config: Config, session_id: str, execution_output_path: Optional[str]
+) -> None:
+    """Configure json_path and call setup_junit when json_log and output path are set."""
+    if not (config.json_log is True and execution_output_path is not None):
+        return
+    config.json_path = (
+        str(Path(config.json_path).expanduser())
+        if config.json_path
+        else str((Path(execution_output_path) / "logs.json").expanduser())
+    )
+    setup_junit(session_id, config)
+
 
 class SessionHandler(ABC):
     """Abstract interface for session management."""
@@ -51,34 +86,10 @@ class Session:
         self.apis = apis
         self.templates = templates
 
-        # Fetch full config dicts for enabled dependencies
-        def to_dict_list(configs):
-            result = []
-            for item in configs:
-                new_item = {}
-                for name, details in item.items():
-                    if hasattr(details, 'model_dump'):
-                        new_item[name] = details.model_dump()
-                    else:
-                        new_item[name] = details
-                result.append(new_item)
-            return result
-
-        all_driver_configs = self.config.driver_sources if hasattr(self.config, 'driver_sources') else []
-        enabled_driver_configs = [item for item in all_driver_configs for name, details in item.items() if details.enabled]
-        enabled_driver_configs = to_dict_list(enabled_driver_configs)
-
-        all_element_configs = self.config.elements_sources if hasattr(self.config, 'elements_sources') else []
-        enabled_element_configs = [item for item in all_element_configs for name, details in item.items() if details.enabled]
-        enabled_element_configs = to_dict_list(enabled_element_configs)
-
-        all_text_configs = self.config.text_detection if hasattr(self.config, 'text_detection') else []
-        enabled_text_configs = [item for item in all_text_configs for name, details in item.items() if details.enabled]
-        enabled_text_configs = to_dict_list(enabled_text_configs)
-
-        all_image_configs = self.config.image_detection if hasattr(self.config, 'image_detection') else []
-        enabled_image_configs = [item for item in all_image_configs for name, details in item.items() if details.enabled]
-        enabled_image_configs = to_dict_list(enabled_image_configs)
+        enabled_driver_configs = _get_enabled_config_list(self.config, "driver_sources")
+        enabled_element_configs = _get_enabled_config_list(self.config, "elements_sources")
+        enabled_text_configs = _get_enabled_config_list(self.config, "text_detection")
+        enabled_image_configs = _get_enabled_config_list(self.config, "image_detection")
 
         if not enabled_driver_configs:
             raise OpticsError(Code.E0501, message="No enabled drivers found in configuration")
@@ -89,9 +100,7 @@ class Session:
         self.optics.add_element_source(enabled_element_configs)
         self.optics.add_text_detection(enabled_text_configs)
         self.optics.add_image_detection(enabled_image_configs, self.config.project_path, self.templates)
-        if config.json_log is True and self.config.execution_output_path is not None:
-            config.json_path = str(Path(config.json_path).expanduser()) if config.json_path else str((Path(self.config.execution_output_path) / "logs.json").expanduser())
-            setup_junit(self.session_id, config)
+        _maybe_setup_junit(config, self.session_id, self.config.execution_output_path)
 
         self.driver = self.optics.get_driver()
         self.event_queue = asyncio.Queue()

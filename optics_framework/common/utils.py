@@ -9,7 +9,7 @@ import base64
 import numpy as np
 from enum import Enum
 from datetime import timezone, timedelta
-from typing import Optional, Any, Union, get_origin, get_args
+from typing import Callable, List, Optional, Tuple, Any, Union, get_origin, get_args
 import inspect
 from skimage.metrics import structural_similarity as ssim
 from optics_framework.common.logging_config import internal_logger
@@ -562,3 +562,42 @@ def _is_list_type(param_type: Any) -> bool:
 
     # Handle List[str] directly
     return _is_list_like(param_type)
+
+
+def bboxes_from_webelements(
+    locate_fn: Callable[[str], Any],
+    elements: List[str],
+) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
+    """
+    Return bounding boxes for each element using located objects' location and size.
+
+    :param locate_fn: Callable that takes an element id and returns a WebElement-like
+        object with .location and .size dicts, or None. If it raises, that element
+        is treated as None and processing continues for the rest.
+    :param elements: List of element identifiers to locate.
+    :return: For each element, ((x1,y1), (x2,y2)) or None if not available.
+    """
+    result: List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]] = []
+    for element in elements:
+        try:
+            obj = locate_fn(element)
+        except Exception:
+            result.append(None)
+            continue
+        if obj is None:
+            result.append(None)
+            continue
+        try:
+            loc = getattr(obj, "location", None)
+            sz = getattr(obj, "size", None)
+            if loc is not None and sz is not None:
+                x1 = int(loc.get("x", 0))
+                y1 = int(loc.get("y", 0))
+                x2 = int(x1 + sz.get("width", 0))
+                y2 = int(y1 + sz.get("height", 0))
+                result.append(((x1, y1), (x2, y2)))
+            else:
+                result.append(None)
+        except (TypeError, ValueError, AttributeError):
+            result.append(None)
+    return result

@@ -9,7 +9,7 @@ First_Name_element,//android.widget.EditText[@text="First name"]
 Last_Name_element,//android.widget.EditText[@text="Last name"]
 Phone_element,//android.widget.EditText[@text="+1"]
 Company_element,//androidx.compose.ui.platform.ComposeView/android.view.View/android.view.View/android.view.View[1]/android.view.View/android.view.View/android.view.View[4]/android.widget.EditText
-Save_Button, //androidx.compose.ui.platform.ComposeView/android.view.View/android.view.View/android.view.View[2]/android.view.View[2]/android.widget.Button
+Save_Button,Save
 First_Name,John
 Last_Name,Doe
 Phone,1234567890

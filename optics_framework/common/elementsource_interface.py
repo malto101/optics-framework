@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Tuple
 import numpy
 
 class ElementSourceInterface(ABC):
@@ -52,6 +52,17 @@ class ElementSourceInterface(ABC):
         :raises AssertionError: If the assertion fails based on the rule.
         """
         pass
+
+    def get_element_bboxes(
+        self, elements: list
+    ) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
+        """
+        Return bounding boxes for each element in pixel coordinates.
+
+        :param elements: List of element identifiers (e.g., XPath, text).
+        :return: For each element, ((x1,y1), (x2,y2)) or None if not available.
+        """
+        return [None] * len(elements)
 
     @abstractmethod
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> list:
