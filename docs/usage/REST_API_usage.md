@@ -43,6 +43,7 @@ Configuration for starting a new Optics session.
 - `text_detection` (List[Union[str, Dict]]): List of text detection engines
 - `image_detection` (List[Union[str, Dict]]): List of image detection engines
 - `project_path` (Optional[str]): Path to the project directory
+- `api_data` (Optional[Dict]): Inline API definitions for use with the **Invoke API** keyword. A JSON object with the same shape as the API YAML content (top-level `"api"` key with `collections`, or the API content at root). File path is not supported in the REST API; use inline object only. Omit if you will add definitions later via **Add API definitions**.
 - `appium_url` (Optional[str]): **Deprecated** - Use driver_sources instead
 - `appium_config` (Optional[Dict]): **Deprecated** - Use driver_sources instead
 
@@ -267,6 +268,64 @@ curl -X POST "http://localhost:8000/v1/sessions/{session_id}/templates" \
 ```
 
 Then call execute with `"params": {"element": "my_button"}` (no need to send the image again).
+
+### Add API definitions (for Invoke API)
+
+**POST** `/v1/sessions/{session_id}/api`
+
+Add or replace API definitions for the session. Use this when you need to call the **Invoke API** keyword and did not supply `api_data` at session creation. The request body **replaces** the session's API data (same semantics as the Add API keyword).
+
+**Path Parameters:**
+- `session_id` (str): The session ID
+
+**Request Body:** A JSON object representing API data. Either a top-level `"api"` key with `collections` (and optional `global_defaults`), or the API content at root. Structure matches the [API definition YAML format](../usage/keyword_usage.md) (e.g. `collections` → each collection has `name`, `base_url`, `global_headers`, `apis` → each API has `endpoint`, `request`, `expected_result`, etc.).
+
+**Response:** 204 No Content on success.
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/v1/sessions/{session_id}/api" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "api": {
+      "collections": {
+        "auth": {
+          "name": "Auth APIs",
+          "base_url": "https://api.example.com",
+          "apis": {
+            "token": {
+              "name": "Get Token",
+              "endpoint": "/token",
+              "request": { "method": "POST", "body": {"user": "x"} },
+              "expected_result": { "expected_status": 200, "extract": {"access_token": "access_token"} }
+            }
+          }
+        }
+      }
+    }
+  }'
+```
+
+### Using Invoke API
+
+To run the **Invoke API** keyword via the REST API, the session must have API definitions. You can either:
+
+1. **At session creation:** include `api_data` in the SessionConfig as an inline JSON object, or
+2. **After creation:** call **Add API definitions** above with your API payload.
+
+Then execute the keyword:
+
+```bash
+curl -X POST "http://localhost:8000/v1/sessions/{session_id}/action" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "keyword",
+    "keyword": "Invoke API",
+    "params": ["collection_name.api_name"]
+  }'
+```
+
+Use the identifier format `collection_name.api_name` (e.g. `auth.token`). Extracted values from the API response are stored in the session and can be used by subsequent keywords or reads.
 
 ### Capture Screenshot
 

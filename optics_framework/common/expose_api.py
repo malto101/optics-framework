@@ -10,14 +10,16 @@ import pkgutil
 import asyncio
 import warnings
 import hashlib
+import yaml
 from itertools import product
 from typing import Optional, Dict, Any, List, Union, cast, Callable, Tuple, NamedTuple
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError as PydanticValidationError
 from sse_starlette.sse import EventSourceResponse
 from optics_framework.common.session_manager import SessionManager, Session
+from optics_framework.common.models import ApiData
 from optics_framework.common.execution import (
     ExecutionEngine,
     ExecutionParams,
@@ -193,6 +195,7 @@ class SessionConfig(BaseModel):
     project_path: Optional[str] = None
     appium_url: Optional[str] = None
     appium_config: Optional[Dict[str, Any]] = None
+    api_data: Optional[Dict[str, Any]] = None  # Inline API definitions only; file path not supported in REST
 
     def _normalize_item(self, item: Union[str, Dict[str, Any]], top_level_url: Optional[str] = None, top_level_capabilities: Optional[Dict[str, Any]] = None) -> Dict[str, DependencyConfig]:
         """Normalize a single source item into {name: DependencyConfig}.
@@ -231,6 +234,33 @@ class SessionConfig(BaseModel):
             "text_detection": text,
             "image_detection": image,
         }
+
+
+def _parse_api_data_to_model(
+    api_data: Union[str, Dict[str, Any]], project_path: Optional[str] = None
+) -> ApiData:
+    """
+    Parse api_data (path or dict) into ApiData. Used at session creation and for
+    the add-session-api endpoint. Matches Optics.add_api semantics.
+    """
+    if isinstance(api_data, str):
+        path = api_data
+        if not os.path.isabs(path) and project_path:
+            path = os.path.join(project_path, path)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"API YAML file not found: {path}")
+        with open(path, "r", encoding="utf-8") as f:
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                raise ValueError(f"Failed to parse API YAML file: {e}") from e
+        content = data.get("api", data)
+    elif isinstance(api_data, dict):
+        content = api_data.get("api", api_data)
+    else:
+        raise ValueError("api_data must be a file path or a dictionary")
+    return ApiData(**content)
+
 
 def _get_keyword_parameters(sig: inspect.Signature) -> List[KeywordParameter]:
     """Extract parameter info from a method signature."""
@@ -349,12 +379,21 @@ async def create_session(config: SessionConfig):
         templates = (
             discover_templates(config.project_path) if config.project_path else None
         )
+        apis: Optional[ApiData] = None
+        if config.api_data is not None:
+            try:
+                apis = _parse_api_data_to_model(config.api_data, project_path=None)
+            except (ValueError, PydanticValidationError) as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid api_data: {e}",
+                ) from e
         session_id = session_manager.create_session(
             session_config,
             test_cases=None,
             modules=None,
             elements=None,
-            apis=None,
+            apis=apis,
             templates=templates,
         )
         reconfigure_logging(session_config)
@@ -764,6 +803,26 @@ async def upload_template(session_id: str, body: TemplateUploadRequest):
         f.write(raw)
     session.inline_templates[body.name] = path
     return {"name": body.name, "status": "ok"}
+
+
+@app.post("/v1/sessions/{session_id}/api", status_code=status.HTTP_204_NO_CONTENT)
+async def add_session_api(session_id: str, body: Dict[str, Any] = Body(...)):
+    """
+    Add or replace API definitions for the session. Request body must be a JSON
+    object: either { "api": { "collections": ... } } or the api content at root.
+    Replaces session API data (same semantics as Add API keyword).
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND)
+    try:
+        api_data = _parse_api_data_to_model(body, project_path=None)
+    except (ValueError, PydanticValidationError) as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid api_data: {e}",
+        ) from e
+    session.apis = api_data
 
 
 # Helper for DRY keyword execution endpoints
