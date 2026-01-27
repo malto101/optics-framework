@@ -1,4 +1,8 @@
+import base64
 import json
+import os
+import shutil
+import tempfile
 import uuid
 import inspect
 import importlib
@@ -24,6 +28,7 @@ from optics_framework.common.config_handler import Config, DependencyConfig
 from optics_framework.common.runner.keyword_register import KeywordRegistry
 from optics_framework.common.utils import _is_list_type
 from optics_framework.api import ActionKeyword, AppManagement, FlowControl, Verifier
+from optics_framework.helper.execute import discover_templates
 from optics_framework.helper.version import VERSION
 
 app = FastAPI(title="Optics Framework API", version="1.0")
@@ -57,12 +62,23 @@ class ExecuteRequest(BaseModel):
     """
     Request model for executing a keyword or test case.
     Supports both positional and named parameters with fallback support.
+    Optional template_images allows inline template images for vision-based
+    keywords (e.g. Press Element with an image): keys are logical names,
+    values are base64-encoded image bytes (raw base64 or data URL).
     """
 
     mode: str
     test_case: Optional[str] = None
     keyword: Optional[str] = None
     params: Union[List[Union[str, List[str]]], Dict[str, Union[str, List[str]]]] = []
+    template_images: Optional[Dict[str, str]] = None
+
+
+class TemplateUploadRequest(BaseModel):
+    """Request model for uploading a template image to a session."""
+
+    name: str
+    image_base64: str
 
 
 class SessionResponse(BaseModel):
@@ -330,12 +346,16 @@ async def create_session(config: SessionConfig):
             project_path=config.project_path,
             log_level="DEBUG"
         )
+        templates = (
+            discover_templates(config.project_path) if config.project_path else None
+        )
         session_id = session_manager.create_session(
             session_config,
             test_cases=None,
             modules=None,
             elements=None,
-            apis=None
+            apis=None,
+            templates=templates,
         )
         reconfigure_logging(session_config)
         internal_logger.info(
@@ -459,6 +479,16 @@ def _keyword_execution_params(session_id: str, keyword: str, param_list: List[st
 def _should_reraise(e: BaseException) -> bool:
     """True if exception should be re-raised as-is (e.g. SystemExit)."""
     return isinstance(e, (SystemExit, KeyboardInterrupt, GeneratorExit))
+
+
+def _decode_template_base64(value: str) -> bytes:
+    """Decode base64 image bytes; supports raw base64 or data URL (data:...;base64,...)."""
+    s = value.strip()
+    if s.startswith("data:"):
+        idx = s.find(";base64,")
+        if idx != -1:
+            s = s[idx + 8:]
+    return base64.b64decode(s)
 
 
 def _build_named_param_context(
@@ -621,6 +651,7 @@ async def execute_keyword(session_id: str, request: ExecuteRequest):
     """
     Execute a keyword in the specified session.
     Supports both positional and named parameters with fallback support.
+    Optional template_images: names to base64 image data for vision-based keywords.
     Returns execution status and result.
     """
     session = session_manager.get_session(session_id)
@@ -632,6 +663,18 @@ async def execute_keyword(session_id: str, request: ExecuteRequest):
 
     engine = ExecutionEngine(session_manager)
     execution_id = str(uuid.uuid4())
+    request_temp_dirs: List[str] = []
+
+    if request.template_images:
+        temp_dir = tempfile.mkdtemp(prefix="optics_request_")
+        request_temp_dirs.append(temp_dir)
+        for name, b64_value in request.template_images.items():
+            raw = _decode_template_base64(b64_value)
+            safe_name = name.replace("/", "_").replace("\\", "_")
+            path = os.path.join(temp_dir, f"{safe_name}.png")
+            with open(path, "wb") as f:
+                f.write(raw)
+            session.request_template_overrides[name] = path
 
     try:
         await session.event_queue.put(ExecutionEvent(
@@ -686,6 +729,42 @@ async def execute_keyword(session_id: str, request: ExecuteRequest):
         if isinstance(e, OpticsError):
             raise HTTPException(status_code=e.status_code, detail=e.to_payload(include_status=True)) from e
         raise HTTPException(status_code=500, detail=f"Execution failed: {str(e)}") from e
+    finally:
+        session.request_template_overrides.clear()
+        for dir_path in request_temp_dirs:
+            try:
+                shutil.rmtree(dir_path, ignore_errors=True)
+            except OSError:
+                pass
+
+
+def _session_inline_templates_dir(session_id: str) -> str:
+    """Return the session-scoped temp directory for inline template uploads."""
+    return os.path.join(tempfile.gettempdir(), f"optics_session_{session_id}")
+
+
+@app.post("/v1/sessions/{session_id}/templates")
+async def upload_template(session_id: str, body: TemplateUploadRequest):
+    """
+    Upload a template image for the session. The name can be used in execute
+    params (e.g. element) for vision-based keywords. Overwrites if name exists.
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        raw = _decode_template_base64(body.image_base64)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {e}") from e
+    base_dir = _session_inline_templates_dir(session_id)
+    os.makedirs(base_dir, exist_ok=True)
+    safe_name = body.name.replace("/", "_").replace("\\", "_")
+    path = os.path.join(base_dir, f"{safe_name}.png")
+    with open(path, "wb") as f:
+        f.write(raw)
+    session.inline_templates[body.name] = path
+    return {"name": body.name, "status": "ok"}
+
 
 # Helper for DRY keyword execution endpoints
 async def run_keyword_endpoint(

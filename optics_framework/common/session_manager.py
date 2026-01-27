@@ -1,3 +1,6 @@
+import os
+import shutil
+import tempfile
 import uuid
 import asyncio
 from abc import ABC, abstractmethod
@@ -68,6 +71,31 @@ class SessionHandler(ABC):
         pass
 
 
+class SessionTemplateResolver:
+    """
+    Resolves template names to filesystem paths using request overrides,
+    session uploads, and project templates. Used by image detection so that
+    execute requests can supply template images inline or via upload.
+    """
+
+    def __init__(self, session: "Session"):
+        self._session = session
+
+    def get_template_path(self, name: str) -> Optional[str]:
+        """Return path for a template name; checks request overrides, then inline, then project."""
+        overrides = getattr(self._session, "request_template_overrides", None) or {}
+        path = overrides.get(name)
+        if path is not None:
+            return path
+        inline = getattr(self._session, "inline_templates", None) or {}
+        path = inline.get(name)
+        if path is not None:
+            return path
+        if self._session.templates is not None:
+            return self._session.templates.get_template_path(name)
+        return None
+
+
 class Session:
     """Represents a single execution session with config and optics."""
 
@@ -85,6 +113,9 @@ class Session:
         self.elements = elements
         self.apis = apis
         self.templates = templates
+        self.request_template_overrides: Dict[str, str] = {}
+        self.inline_templates: Dict[str, str] = {}
+        self._template_resolver = SessionTemplateResolver(self)
 
         enabled_driver_configs = _get_enabled_config_list(self.config, "driver_sources")
         enabled_element_configs = _get_enabled_config_list(self.config, "elements_sources")
@@ -99,7 +130,9 @@ class Session:
         self.optics.add_driver(enabled_driver_configs)
         self.optics.add_element_source(enabled_element_configs)
         self.optics.add_text_detection(enabled_text_configs)
-        self.optics.add_image_detection(enabled_image_configs, self.config.project_path, self.templates)
+        self.optics.add_image_detection(
+            enabled_image_configs, self.config.project_path or "", self._template_resolver
+        )
         _maybe_setup_junit(config, self.session_id, self.config.execution_output_path)
 
         self.driver = self.optics.get_driver()
@@ -130,7 +163,14 @@ class SessionManager(SessionHandler):
     def terminate_session(self, session_id: str) -> None:
         """Terminates a session and cleans up resources."""
         session: Session | None = self.sessions.pop(session_id, None)
-        if session and session.driver:
-            session.driver.terminate()
+        if session:
+            if session.driver:
+                session.driver.terminate()
+            session.inline_templates.clear()
+        base_dir = os.path.join(tempfile.gettempdir(), f"optics_session_{session_id}")
+        try:
+            shutil.rmtree(base_dir, ignore_errors=True)
+        except OSError:
+            pass
         cleanup_junit(session_id)
         get_event_manager_registry().remove_session(session_id)

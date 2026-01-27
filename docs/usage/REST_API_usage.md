@@ -185,6 +185,11 @@ Execute a keyword in the specified session. Supports both positional and named p
 
 **Request Body:** `ExecuteRequest`
 
+- `mode` (str): Must be `"keyword"`.
+- `keyword` (str): Keyword name (e.g. `"Press Element"`).
+- `params`: Positional list or named dict of string parameters.
+- `template_images` (optional): Map of logical name → base64-encoded image. Use these names in `params` (e.g. `element`) for vision-based keywords. Values can be raw base64 or a data URL (`data:image/png;base64,...`). Inline images apply only to this request.
+
 **Response:** `ExecutionResponse`
 
 **Example with positional parameters:**
@@ -227,6 +232,41 @@ curl -X POST "http://localhost:8000/v1/sessions/{session_id}/action" \
     - The API will try all combinations of fallback values until one succeeds
     - If all combinations fail, an error is returned with details about each attempt
     - Named parameters are converted to positional based on the method signature
+
+**Example with inline template images (vision-based Press Element):**
+```bash
+curl -X POST "http://localhost:8000/v1/sessions/{session_id}/action" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "keyword",
+    "keyword": "Press Element",
+    "params": {"element": "my_button"},
+    "template_images": {"my_button": "<base64-encoded-png>"}
+  }'
+```
+Use the same name in `params` (e.g. `element`) as in `template_images`. You can also register templates per session via **Upload Template** and reuse names across execute calls.
+
+### Upload Template
+
+**POST** `/v1/sessions/{session_id}/templates`
+
+Upload a template image for the session. The given name can be used in execute `params` (e.g. `element`) for vision-based keywords. Overwrites if the name already exists. Files are removed when the session is terminated.
+
+**Path Parameters:**
+- `session_id` (str): The session ID
+
+**Request Body:** `{"name": "<logical-name>", "image_base64": "<base64-or-data-url>"}`
+
+**Response:** `{"name": "<logical-name>", "status": "ok"}`
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/v1/sessions/{session_id}/templates" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my_button", "image_base64": "<base64-encoded-png>"}'
+```
+
+Then call execute with `"params": {"element": "my_button"}` (no need to send the image again).
 
 ### Capture Screenshot
 
