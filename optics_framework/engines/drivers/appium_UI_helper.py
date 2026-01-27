@@ -99,7 +99,7 @@ class UIHelper:
                     internal_logger.debug("Xpath found using exact match")
                     return found_xpath, time_stamp
             except Exception as e:
-                internal_logger.error(
+                internal_logger.debug(
                     f"Error in exact match for XPath '{xpath}': {str(e)}"
                 )
 
@@ -110,7 +110,7 @@ class UIHelper:
                     internal_logger.debug("Xpath found using relative match")
                     return found_xpath, time_stamp
             except Exception as e:
-                internal_logger.error(
+                internal_logger.debug(
                     f"Error in relative match for XPath '{xpath}': {str(e)}"
                 )
 
@@ -121,7 +121,7 @@ class UIHelper:
                     internal_logger.debug("Xpath found using partial match")
                     return found_xpath, time_stamp
             except Exception as e:
-                internal_logger.error(
+                internal_logger.debug(
                     f"Error in partial match for XPath '{xpath}': {str(e)}"
                 )
 
@@ -132,17 +132,17 @@ class UIHelper:
                     internal_logger.debug("Xpath found using attribute match")
                     return found_xpath, time_stamp
             except Exception as e:
-                internal_logger.error(
+                internal_logger.debug(
                     f"Error in attribute match for XPath '{xpath}': {str(e)}"
                 )
 
             # If no match is found
-            internal_logger.error(
+            internal_logger.debug(
                 f"No match found for XPath '{xpath}' after applying all strategies."
             )
             return None, None
         except Exception as e:
-            internal_logger.error(
+            internal_logger.debug(
                 f"Unexpected error in find_xpath for XPath '{xpath}': {str(e)}"
             )
             return None, None

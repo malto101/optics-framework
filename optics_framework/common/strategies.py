@@ -211,7 +211,7 @@ class TextDetectionStrategy(LocatorStrategy):
                 full_screenshot, aoi_x, aoi_y, aoi_width, aoi_height
             )
         except ValueError as e:
-            internal_logger.error(f"AOI cropping failed for TextDetectionStrategy: {e}")
+            internal_logger.debug(f"AOI cropping failed for TextDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Invalid AOI parameters: {e}")
 
         # Find element in cropped screenshot
@@ -226,7 +226,7 @@ class TextDetectionStrategy(LocatorStrategy):
             internal_logger.debug(f"Text element '{element}' found at AOI coordinates {coor}, adjusted to full screenshot coordinates {adjusted_coor}")
             return adjusted_coor
         except ValueError as e:
-            internal_logger.error(f"Coordinate adjustment failed for TextDetectionStrategy: {e}")
+            internal_logger.debug(f"Coordinate adjustment failed for TextDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Coordinate adjustment failed: {e}")
 
     def assert_elements(
@@ -308,7 +308,7 @@ class ImageDetectionStrategy(LocatorStrategy):
                 full_screenshot, aoi_x, aoi_y, aoi_width, aoi_height
             )
         except ValueError as e:
-            internal_logger.error(f"AOI cropping failed for ImageDetectionStrategy: {e}")
+            internal_logger.debug(f"AOI cropping failed for ImageDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Invalid AOI parameters: {e}")
 
         # Find element in cropped screenshot
@@ -323,7 +323,7 @@ class ImageDetectionStrategy(LocatorStrategy):
             internal_logger.debug(f"Image element '{element}' found at AOI coordinates {centre}, adjusted to full screenshot coordinates {adjusted_centre}")
             return adjusted_centre
         except ValueError as e:
-            internal_logger.error(f"Coordinate adjustment failed for ImageDetectionStrategy: {e}")
+            internal_logger.debug(f"Coordinate adjustment failed for ImageDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Coordinate adjustment failed: {e}")
 
     def assert_elements(
@@ -399,7 +399,7 @@ class ScreenshotStrategy:
         try:
             screenshot = self.element_source.capture()
         except Exception as e:
-            internal_logger.error(f"Error capturing screenshot: {e}")
+            internal_logger.debug(f"Error capturing screenshot: {e}")
             raise OpticsError(Code.E0303, message=f"Error capturing screenshot: {e}")
         if screenshot is not None and not utils.is_black_screen(screenshot):
             return screenshot
@@ -539,7 +539,7 @@ class StrategyManager:
                 return LocateResult(result, strategy)
         except Exception as e:
             execution_tracer.log_attempt(strategy, element, "fail", error=str(e))
-            internal_logger.error(f"Strategy {strategy.__class__.__name__} failed: {e}")
+            internal_logger.debug(f"Strategy {strategy.__class__.__name__} failed: {e}")
         return None
 
     def locate(self, element: str, aoi_x=None, aoi_y=None, aoi_width=None, aoi_height=None, index: int = 0) -> Generator[LocateResult, None, None]:
@@ -554,7 +554,7 @@ class StrategyManager:
             )
             if locate_result:
                 yield locate_result
-        raise OpticsError(Code.E0201, message=f"Element '{element}' not found using any strategy.")
+        raise OpticsError(Code.E0201, message=f"Element '{element}' not found.")
 
     def _alloc_time_for_strategy(
         self, deadline: float, idx: int, applicable_strategies: List[Any]
@@ -653,7 +653,7 @@ class StrategyManager:
                 return img
             except Exception as e:
                 execution_tracer.log_attempt(strategy, "screenshot", "fail", error=str(e))
-        internal_logger.error("No screenshot captured.")
+        internal_logger.debug("No screenshot captured.")
         raise OpticsError(Code.E0303, message="No screenshot captured using available strategies.")
 
     def capture_screenshot_stream(self, timeout: int = 30):
@@ -687,7 +687,7 @@ class StrategyManager:
             except Exception as e:
                 internal_logger.debug(
                     f"Pagesource capture failed with {strategy.__class__.__name__}: {e}")
-        internal_logger.error("No pagesource captured.")
+        internal_logger.debug("No pagesource captured.")
         raise OpticsError(Code.E0403, message="No pagesource captured using available strategies.")
 
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> List[dict]:
@@ -698,5 +698,5 @@ class StrategyManager:
             except Exception as e:
                 internal_logger.debug(
                     f"Failed to retrieve interactive elements with {strategy.__class__.__name__}: {e}")
-        internal_logger.error("No interactive elements retrieved.")
+        internal_logger.debug("No interactive elements retrieved.")
         raise OpticsError(Code.E0202, message="No interactive elements retrieved using available strategies.")

@@ -210,7 +210,7 @@ def save_screenshot(img, name, output_dir, time_stamp=None):
         time_stamp: Optional timestamp, will be generated if not provided
     """
     if img is None:
-        internal_logger.error("Image is empty. Cannot save screenshot.")
+        internal_logger.debug("Image is empty. Cannot save screenshot.")
         raise ValueError("Image is empty. Cannot save screenshot.")
     if output_dir is None:
         internal_logger.info(OUTPUT_PATH_NOT_SET_MSG)
@@ -288,7 +288,7 @@ def save_page_source(tree, time_stamp, output_dir):
         with open(page_source_file_path, 'r+', encoding='utf-8') as f:
             content = f.read()
             if not content.strip().endswith("</logs>"):
-                internal_logger.error("Invalid log file: missing closing </logs> tag.")
+                internal_logger.debug("Invalid log file: missing closing </logs> tag.")
                 return
 
             f.seek(0)

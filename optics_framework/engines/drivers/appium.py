@@ -80,11 +80,11 @@ class Appium(DriverInterface):
     def __init__(self, config: Optional[Dict[str, Any]] = None, event_sdk: Optional[EventSDK] = None) -> None:
         self.driver: Optional[WebDriver] = None
         if event_sdk is None:
-            internal_logger.error("No EventSDK instance provided to Appium driver.")
+            internal_logger.debug("No EventSDK instance provided to Appium driver.")
             raise OpticsError(Code.E0101, message="Appium driver requires an EventSDK instance.")
         self.event_sdk: EventSDK = event_sdk
         if config is None:
-            internal_logger.error(
+            internal_logger.debug(
                 f"No configuration provided for {self.DEPENDENCY_TYPE}: {self.NAME}"
             )
             raise OpticsError(Code.E0104, message="Appium driver not enabled in config")
@@ -93,7 +93,7 @@ class Appium(DriverInterface):
 
         self.capabilities: Dict[str, Any] = config.get(self.CONFIG_CAPABILITIES, {})
         if not self.capabilities:
-            internal_logger.error("No capabilities found in config")
+            internal_logger.debug("No capabilities found in config")
             raise OpticsError(Code.E0104, message="Appium capabilities not found in config")
 
         # UI Tree handling
@@ -103,7 +103,7 @@ class Appium(DriverInterface):
     def _require_driver(self) -> WebDriver:
         """Helper to ensure self.driver is initialized, else raise error."""
         if self.driver is None:
-            internal_logger.error(self.NOT_INITIALIZED)
+            internal_logger.debug(self.NOT_INITIALIZED)
             raise OpticsError(Code.E0101, message=self.NOT_INITIALIZED)
         return self.driver
 
@@ -196,7 +196,7 @@ class Appium(DriverInterface):
             self.ui_helper = UIHelper(self)
             return new_session_id
         except Exception as e:
-            internal_logger.error(f"Failed to create new Appium session: {e}")
+            internal_logger.debug(f"Failed to create new Appium session: {e}")
             self.driver = None
             raise OpticsError(
                 Code.E0102, message=f"Failed to create new Appium session due to: {e}", cause=e
@@ -284,7 +284,7 @@ class Appium(DriverInterface):
         is_not_implemented = "Method is not implemented" in error_msg or "NotImplementedError" in error_msg
 
         if is_not_implemented and script.startswith(self.MOBILE_PREFIX):
-            internal_logger.error(
+            internal_logger.debug(
                 f"Mobile command '{script}' is not supported by the current Appium driver. "
                 f"This command may not be available for UIAutomator2, or the command name may be incorrect. "
                 f"Available mobile commands vary by driver. For pressing keys, consider using press_keycode() method directly."
@@ -424,7 +424,7 @@ class Appium(DriverInterface):
             internal_logger.info(f"Attached to existing Appium session with session_id: {session_id}")
             return attached_driver
         except Exception as e:
-            internal_logger.error(f"Failed to attach to existing Appium session {session_id}: {e}")
+            internal_logger.debug(f"Failed to attach to existing Appium session {session_id}: {e}")
             self.driver = None
             raise OpticsError(
                 Code.E0102,
@@ -478,7 +478,7 @@ class Appium(DriverInterface):
         :param event_name: The event triggering the forced termination, if any.
         """
         if not self.driver:
-            internal_logger.error(self.NOT_INITIALIZED)
+            internal_logger.debug(self.NOT_INITIALIZED)
             return
 
         if event_name:
@@ -526,7 +526,7 @@ class Appium(DriverInterface):
                     # Extract the version string.
                     return line.split(self.VERSION_NAME_PREFIX)[-1].strip()
         except subprocess.CalledProcessError as e:
-            internal_logger.error(f"Error executing adb command: {e.output}")
+            internal_logger.debug(f"Error executing adb command: {e.output}")
             raise OpticsError(Code.E0401, message="Error executing adb command", details=e.output, cause=e) from e
         raise OpticsError(Code.E0401, message=f"Could not find versionName for package: {app_package}")
 

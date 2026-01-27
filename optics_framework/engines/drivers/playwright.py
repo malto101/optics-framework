@@ -64,7 +64,7 @@ class Playwright(DriverInterface):
         except Exception as e:
             # Clean up any partially initialized resources on error
             await self._cleanup_resources()
-            internal_logger.error("[Playwright] Launch failed", exc_info=True)
+            internal_logger.debug("[Playwright] Launch failed", exc_info=True)
             raise OpticsError(Code.E0102, str(e), cause=e)
 
     async def _launch_other_app_async(self, app_name: str, event_name=None):
@@ -93,7 +93,7 @@ class Playwright(DriverInterface):
             internal_logger.info("[Playwright] Launched other app in new tab")
 
         except Exception as e:
-            internal_logger.error("[Playwright] Failed to launch other app: %s", e, exc_info=True)
+            internal_logger.debug("[Playwright] Failed to launch other app: %s", e, exc_info=True)
             raise OpticsError(Code.E0102, str(e), cause=e)
 
     def launch_other_app(self, app_name: str, event_name=None):
@@ -439,5 +439,5 @@ class Playwright(DriverInterface):
 
             return result
         except Exception as e:
-            internal_logger.error(f"[Playwright] Failed to execute script: {e}")
+            internal_logger.debug(f"[Playwright] Failed to execute script: {e}")
             raise OpticsError(Code.E0401, message=f"Failed to execute script: {e}", cause=e) from e

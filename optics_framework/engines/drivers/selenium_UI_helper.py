@@ -66,7 +66,7 @@ class UIHelper:
             internal_logger.debug(f"Fuzzy match found: '{best_match.text}' (score: {best_score})")
             return best_match
 
-        internal_logger.error(f"No fuzzy text match found for: '{text}'")
+        internal_logger.debug(f"No fuzzy text match found for: '{text}'")
         raise NoSuchElementException(f"No fuzzy match found for '{text}'")
 
 
@@ -95,11 +95,11 @@ class UIHelper:
         candidates = self._collect_matching_tags(soup, text)
 
         if not candidates:
-            internal_logger.error(f"No match found for '{text}' in HTML source")
+            internal_logger.debug(f"No match found for '{text}' in HTML source")
             raise ValueError(f"No match found for '{text}'")
 
         if index >= len(candidates):
-            internal_logger.error(f"Match index {index} out of range for text '{text}'")
+            internal_logger.debug(f"Match index {index} out of range for text '{text}'")
             raise ValueError(f"Match index {index} out of range. Only {len(candidates)} match(es) found.")
 
         return candidates[index]
