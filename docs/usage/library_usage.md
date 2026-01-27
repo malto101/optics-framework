@@ -291,16 +291,20 @@ optics.condition("${count} > 10", "handle_large_count")
 ### Data Operations
 
 ```python
-# Read data from CSV
-data = optics.read_data("data.csv")
+# Read data from CSV (element, source, optional query)
+data = optics.read_data("${data}", "data.csv")
+print(f"Data: {data}")
+
+# Read with query: filter and column selection
+data = optics.read_data("${users}", "users.csv", "status=='active';select=username,email")
+
+# Read from a 2D list: first row = headers, following rows = data
+data = optics.read_data("${items}", [["id", "name"], ["1", "a"], ["2", "b"]])
 print(f"Data: {data}")
 
 # Invoke API
 response = optics.invoke_api("GET", "https://api.example.com/data")
 print(f"API response: {response}")
-
-# Read data from list
-data = optics.read_data(["item1", "item2", "item3"])
 ```
 
 ### Loops

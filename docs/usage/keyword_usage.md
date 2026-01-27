@@ -662,13 +662,15 @@ Condition,${status} == "active",activate,deactivate,default_action
 
 Reads tabular data from a CSV file, JSON file, environment variable, or a 2D list, applies optional filtering and column selection, and stores the result in the session's elements.
 
+For the programmatic API and full parameter details, see [Flow Control](../api_reference/flow_control.md) in the API reference.
+
 **Parameters:**
 
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
-| `input_element` | Required | The element name (variable) where data will be stored (e.g., `${data}`) | - |
-| `file_path` | Required | The file path, environment variable (prefixed with `ENV:`), or a 2D list | - |
-| `query` | Optional | Query string with filters and column selection:<br/>• `select=col1,col2` - select specific columns<br/>• `col1='value'` - filter by column value<br/>• Multiple filters: `col1='value';col2>10;select=col1,col2` | `""` |
+| `input_element` | Required | The variable name where data will be stored. Prefer the form `${name}` (e.g. `${data}`). If another form is used, the value is still stored under that name (a warning may be logged). | - |
+| `file_path` | Required | The data source. One of:<br/>• **File path**: Path to a `.csv` or `.json` file (relative paths are resolved from the project path). Only these extensions are supported.<br/>• **Environment variable**: Use the prefix `ENV:` followed by the variable name. Example: `ENV:APP_CONFIG` reads the env var `APP_CONFIG`. The value is interpreted as: (1) if it looks like JSON (starts with `[`, `{`, or `"`), it is parsed as JSON and objects/arrays are normalized to a table; (2) otherwise it is parsed as CSV if valid; (3) otherwise the whole value is stored as a single string.<br/>• **2D list**: Only when using the Python API: a list whose first row is headers and following rows are data (e.g. `[["col1","col2"],["a","b"]]`). Not passable as a literal in CSV test steps; see [Library Usage](library_usage.md) for programmatic use. | - |
+| `query` | Optional | Semicolon-separated parts. Each part is either:<br/>• **Column selection**: `select=col1,col2,...` (comma-separated column names).<br/>• **Filter**: A pandas-style expression, e.g. `status=='active'`, `count>10`. Multiple filter parts are combined with `and`.<br/>Any `${varname}` in the query is replaced from `session.elements` before evaluation (e.g. `role=='${expected_role}'`). | `""` |
 
 **Example (CSV file):**
 
@@ -688,11 +690,13 @@ Read Data,${active_users},users.csv,status='active';select=username,email
 Read Data,${config},ENV:APP_CONFIG
 ```
 
-**Example (pipe-separated values):**
+**Example (query with variable):**
 
 ```csv
-Read Data,${items},item1|item2|item3
+Read Data,${filtered},users.csv,role=='${expected_role}';select=id,name
 ```
+
+**Note:** Inline list data (e.g. a 2D list) is supported only when calling the Python API; see [Library Usage](library_usage.md) for examples.
 
 ### Evaluate
 

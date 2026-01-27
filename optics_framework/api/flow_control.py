@@ -443,6 +443,19 @@ class FlowControl:
         """
         Reads tabular data from a CSV file, JSON file, environment variable, or a 2D list,
         applies optional filtering and column selection, and stores the result in the session's elements.
+
+        Args:
+            input_element: Variable name where the result is stored (e.g. `${data}`). Prefer `${name}` form.
+            file_path: Data source. One of: (1) path to a `.csv` or `.json` file; (2) string
+                ``ENV:VAR_NAME`` to use an environment variable (value parsed as JSON, CSV, or plain string);
+                (3) a 2D list with first row as headers (Python API only).
+            query: Optional semicolon-separated parts: ``select=col1,col2`` and/or filter expressions
+                (pandas-style). Any ``${varname}`` in the query is resolved from `session.elements` before
+                evaluation. Default ``""``.
+
+        Returns:
+            The stored value as a list (or list of lists for multi-row results). Also writes into
+            `session.elements` under the name derived from `input_element`.
         """
         internal_logger.debug(f"[READ_DATA] Called with input_element={input_element}, file_path={file_path}, query={query}")
         self._ensure_session()
