@@ -1,5 +1,5 @@
 import time
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Tuple
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 from optics_framework.common.elementsource_interface import ElementSourceInterface
@@ -71,9 +71,8 @@ class SeleniumFindElement(ElementSourceInterface):
             ValueError: If the `index` argument is provided, as it's unsupported in Selenium.
         """
         if self.driver is None:
-            msg = "Selenium driver is not initialized for SeleniumFindElement."
-            internal_logger.error(msg)
-            raise RuntimeError(msg)
+            internal_logger.error(NOT_INITIALISED_MSG)
+            raise RuntimeError(NOT_INITIALISED_MSG)
         element_type = utils.determine_element_type(element)
         if index != 0:
             msg = 'Selenium Find Element does not support locating elements using index.'
@@ -108,9 +107,8 @@ class SeleniumFindElement(ElementSourceInterface):
         Try locating an element using all known Selenium strategies.
         """
         if self.driver is None:
-            msg = "Selenium driver is not initialized for SeleniumFindElement."
-            internal_logger.error(msg)
-            raise RuntimeError(msg)
+            internal_logger.error(NOT_INITIALISED_MSG)
+            raise RuntimeError(NOT_INITIALISED_MSG)
         strategies = [
             (By.ID, locator_value),
             (By.NAME, locator_value),
@@ -132,6 +130,30 @@ class SeleniumFindElement(ElementSourceInterface):
         internal_logger.warning(f"No matching element found using any strategy for: {locator_value}")
         return None
 
+    def get_element_bboxes(
+        self, elements: list
+    ) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
+        """Return bounding boxes for each element using WebElement location and size."""
+        result: List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]] = []
+        for element in elements:
+            obj = self.locate(element)
+            if obj is None:
+                result.append(None)
+                continue
+            try:
+                loc = getattr(obj, "location", None)
+                sz = getattr(obj, "size", None)
+                if loc is not None and sz is not None:
+                    x1 = int(loc.get("x", 0))
+                    y1 = int(loc.get("y", 0))
+                    x2 = int(x1 + sz.get("width", 0))
+                    y2 = int(y1 + sz.get("height", 0))
+                    result.append(((x1, y1), (x2, y2)))
+                else:
+                    result.append(None)
+            except (TypeError, ValueError, AttributeError):
+                result.append(None)
+        return result
 
     def assert_elements(self, elements: list, timeout: int = 10, rule: str = "any") -> None:
         """

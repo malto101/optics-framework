@@ -66,6 +66,10 @@ _optics_completions() {
     serve)
       COMPREPLY=( $(compgen -W "--host --port -h --help" -- "$cur") )
       ;;
+
+    *)
+      COMPREPLY=()
+      ;;
   esac
 }
 

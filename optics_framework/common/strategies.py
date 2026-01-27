@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import inspect
 import time
 import math
-from typing import List, Union, Tuple, Generator, Set, Optional
+from typing import List, Union, Tuple, Generator, Set, Optional, Any
 import numpy as np
 from optics_framework.common.base_factory import InstanceFallback
 from optics_framework.common.elementsource_interface import ElementSourceInterface
@@ -36,7 +36,10 @@ class LocatorStrategy(ABC):
         pass
 
     @abstractmethod
-    def assert_elements(self, elements: list, timeout: int = 30, rule: str = 'any') -> Tuple[bool, Optional[str]]:
+    def assert_elements(
+        self, elements: list, timeout: int = 30, rule: str = 'any'
+    ) -> Tuple[bool, Optional[str], Optional[Any]]:
+        """Returns (result, timestamp, annotated_frame). Timestamp and annotated_frame may be None."""
         pass
 
     @staticmethod
@@ -90,8 +93,9 @@ class LocatorStrategy(ABC):
 class XPathStrategy(LocatorStrategy):
     """Strategy for locating elements via XPath."""
 
-    def __init__(self, element_source: ElementSourceInterface):
+    def __init__(self, element_source: ElementSourceInterface, strategy_manager=None):
         self._element_source = element_source
+        self._strategy_manager = strategy_manager
 
     @property
     def element_source(self) -> ElementSourceInterface:
@@ -100,12 +104,32 @@ class XPathStrategy(LocatorStrategy):
     def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int]]:
         return self.element_source.locate(element, index)
 
-    def assert_elements(self, elements: list, timeout: int = 30, rule: str = 'any') -> Tuple[bool, Optional[str]]:
+    def assert_elements(
+        self, elements: list, timeout: int = 30, rule: str = 'any'
+    ) -> Tuple[bool, Optional[str], Optional[Any]]:
         try:
             self.element_source.assert_elements(elements, timeout, rule)
-            return True, None
+            timestamp = utils.get_timestamp()
+            frame = None
+            if self._strategy_manager is not None:
+                try:
+                    frame = self._strategy_manager.capture_screenshot()
+                except Exception:
+                    frame = None
+            bboxes = []
+            if hasattr(self.element_source, 'get_element_bboxes'):
+                bboxes = [
+                    b for b in self.element_source.get_element_bboxes(elements)
+                    if b is not None
+                ]
+            if frame is not None:
+                if bboxes:
+                    annotated_frame = utils.annotate(frame.copy(), bboxes)
+                    return True, timestamp, annotated_frame
+                return True, timestamp, frame.copy()
+            return True, timestamp, None
         except Exception:
-            return False, None
+            return False, None, None
 
     @staticmethod
     def supports(element_type: str, element_source: ElementSourceInterface) -> bool:
@@ -115,8 +139,9 @@ class XPathStrategy(LocatorStrategy):
 class TextElementStrategy(LocatorStrategy):
     """Strategy for locating text elements directly via the element source."""
 
-    def __init__(self, element_source: ElementSourceInterface):
+    def __init__(self, element_source: ElementSourceInterface, strategy_manager=None):
         self._element_source = element_source
+        self._strategy_manager = strategy_manager
 
     @property
     def element_source(self) -> ElementSourceInterface:
@@ -125,12 +150,32 @@ class TextElementStrategy(LocatorStrategy):
     def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int]]:
         return self.element_source.locate(element, index)
 
-    def assert_elements(self, elements: list, timeout: int = 30, rule: str = 'any') -> Tuple[bool, Optional[str]]:
+    def assert_elements(
+        self, elements: list, timeout: int = 30, rule: str = 'any'
+    ) -> Tuple[bool, Optional[str], Optional[Any]]:
         try:
             self.element_source.assert_elements(elements, timeout, rule)
-            return True, None # returning None since there's no annotation available
+            timestamp = utils.get_timestamp()
+            frame = None
+            if self._strategy_manager is not None:
+                try:
+                    frame = self._strategy_manager.capture_screenshot()
+                except Exception:
+                    frame = None
+            bboxes = []
+            if hasattr(self.element_source, 'get_element_bboxes'):
+                bboxes = [
+                    b for b in self.element_source.get_element_bboxes(elements)
+                    if b is not None
+                ]
+            if frame is not None:
+                if bboxes:
+                    annotated_frame = utils.annotate(frame.copy(), bboxes)
+                    return True, timestamp, annotated_frame
+                return True, timestamp, frame.copy()
+            return True, timestamp, None
         except Exception:
-            return False, None
+            return False, None, None
 
     @staticmethod
     def supports(element_type: str, element_source: ElementSourceInterface) -> bool:
@@ -197,7 +242,9 @@ class TextDetectionStrategy(LocatorStrategy):
             internal_logger.error(f"Coordinate adjustment failed for TextDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Coordinate adjustment failed: {e}")
 
-    def assert_elements(self, elements: list, timeout: int = 30, rule: str = 'any') -> Tuple[bool, Optional[str]]:
+    def assert_elements(
+        self, elements: list, timeout: int = 30, rule: str = 'any'
+    ) -> Tuple[bool, Optional[str], Optional[Any]]:
         if self.text_detection is None:
             raise OpticsError(Code.E0201, message=TEXT_DETECTION_NOT_AVAILABLE_MSG)
         end_time = time.time() + timeout
@@ -292,7 +339,9 @@ class ImageDetectionStrategy(LocatorStrategy):
             internal_logger.error(f"Coordinate adjustment failed for ImageDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Coordinate adjustment failed: {e}")
 
-    def assert_elements(self, elements: list, timeout: int = 30, rule: str = 'any') -> Tuple[bool, Optional[str]]:
+    def assert_elements(
+        self, elements: list, timeout: int = 30, rule: str = 'any'
+    ) -> Tuple[bool, Optional[str], Optional[Any]]:
         end_time = time.time() + timeout
         result = False
         ss_stream = self.strategy_manager.capture_screenshot_stream(timeout=timeout)
@@ -389,8 +438,8 @@ class StrategyFactory:
         self.image_detection = image_detection
         self.strategy_manager = strategy_manager
         self._registry = [
-            (XPathStrategy, "XPath", {}, 1),
-            (TextElementStrategy, "Text", {}, 2),
+            (XPathStrategy, "XPath", {"strategy_manager": self.strategy_manager}, 1),
+            (TextElementStrategy, "Text", {"strategy_manager": self.strategy_manager}, 2),
             (TextDetectionStrategy, "Text", {"text_detection": self.text_detection, "strategy_manager": self.strategy_manager}, 3),
             (ImageDetectionStrategy, "Image", {"image_detection": self.image_detection, "strategy_manager": self.strategy_manager}, 4),
         ]
@@ -461,90 +510,116 @@ class StrategyManager:
             strategies.update(self.pagesource_factory.create_strategies(instance))
         return strategies
 
+    def _validate_aoi(
+        self, aoi_x: Optional[float], aoi_y: Optional[float],
+        aoi_width: Optional[float], aoi_height: Optional[float]
+    ) -> bool:
+        """Validate AOI params; if any is set, all must be set. Return True if using AOI."""
+        aoi_params = [aoi_x, aoi_y, aoi_width, aoi_height]
+        use_aoi = any(p is not None for p in aoi_params)
+        if use_aoi and not all(p is not None for p in aoi_params):
+            raise OpticsError(
+                Code.E0205,
+                message="All AOI parameters (aoi_x, aoi_y, aoi_width, aoi_height) must be provided together",
+            )
+        if use_aoi:
+            execution_logger.info(f"Using AOI: x={aoi_x}%, y={aoi_y}%, width={aoi_width}%, height={aoi_height}%")
+        return use_aoi
+
+    def _try_strategy_locate(
+        self,
+        strategy: "LocatorStrategy",
+        element: str,
+        element_type: str,
+        use_aoi: bool,
+        aoi_x: Optional[float],
+        aoi_y: Optional[float],
+        aoi_width: Optional[float],
+        aoi_height: Optional[float],
+        index: int,
+    ) -> Optional[LocateResult]:
+        """Run one strategy; return LocateResult on success, None on skip/fail."""
+        if not strategy.supports(element_type, strategy.element_source):
+            return None
+        try:
+            locate_with_aoi = getattr(strategy, "locate_with_aoi", None)
+            if use_aoi and locate_with_aoi is not None:
+                result = locate_with_aoi(element, aoi_x, aoi_y, aoi_width, aoi_height, index=index)
+            else:
+                result = strategy.locate(element, index=index)
+            if result:
+                execution_tracer.log_attempt(strategy, element, "success")
+                return LocateResult(result, strategy)
+        except Exception as e:
+            execution_tracer.log_attempt(strategy, element, "fail", error=str(e))
+            internal_logger.error(f"Strategy {strategy.__class__.__name__} failed: {e}")
+        return None
+
     def locate(self, element: str, aoi_x=None, aoi_y=None, aoi_width=None, aoi_height=None, index: int = 0) -> Generator[LocateResult, None, None]:
         element_type = utils.determine_element_type(element)
         execution_logger.info(f"Locating element: {element} of type: {element_type}...")
-
-        # Check if AOI is specified
-        aoi_params = [aoi_x, aoi_y, aoi_width, aoi_height]
-        use_aoi = any(param is not None for param in aoi_params)
-
-        if use_aoi:
-            # Validate that all AOI params are provided when any is provided
-            if not all(param is not None for param in aoi_params):
-                raise OpticsError(Code.E0205, message="All AOI parameters (aoi_x, aoi_y, aoi_width, aoi_height) must be provided together")
-
-            execution_logger.info(f"Using AOI: x={aoi_x}%, y={aoi_y}%, width={aoi_width}%, height={aoi_height}%")
+        use_aoi = self._validate_aoi(aoi_x, aoi_y, aoi_width, aoi_height)
 
         for strategy in self.locator_strategies:
             internal_logger.debug(f"Trying strategy: {type(strategy).__name__} for element: {element}")
-            if strategy.supports(element_type, strategy.element_source):
-                try:
-                    # Check if strategy supports AOI by looking for aoi-aware locate method
-                    if use_aoi and hasattr(strategy, 'locate_with_aoi'):
-                        result = strategy.locate_with_aoi(element, aoi_x, aoi_y, aoi_width, aoi_height, index=index)
-                    else:
-                        result = strategy.locate(element, index=index)
-
-                    if result:
-                        execution_tracer.log_attempt(strategy, element, "success")
-                        yield LocateResult(result, strategy)
-                except Exception as e:
-                    execution_tracer.log_attempt(strategy, element, "fail", error=str(e))
-                    internal_logger.error(
-                        f"Strategy {strategy.__class__.__name__} failed: {e}")
+            locate_result = self._try_strategy_locate(
+                strategy, element, element_type, use_aoi, aoi_x, aoi_y, aoi_width, aoi_height, index
+            )
+            if locate_result:
+                yield locate_result
         raise OpticsError(Code.E0201, message=f"Element '{element}' not found using any strategy.")
+
+    def _alloc_time_for_strategy(
+        self, deadline: float, idx: int, applicable_strategies: List[Any]
+    ) -> Optional[Tuple[int, float, int]]:
+        """Compute seconds to allocate for this strategy. Returns (alloc, remaining_total, remaining_strategies) or None to break."""
+        remaining_total = max(0.0, deadline - time.time())
+        remaining_strategies = len(applicable_strategies) - idx
+        if remaining_total <= 0:
+            internal_logger.debug("No remaining time left to try further strategies.")
+            return None
+        alloc = int(math.ceil(remaining_total / remaining_strategies))
+        alloc = min(alloc, int(math.floor(remaining_total))) if remaining_total >= 1 else 0
+        if alloc <= 0:
+            if idx == len(applicable_strategies) - 1:
+                return (0, remaining_total, remaining_strategies)
+            internal_logger.debug("Insufficient time to allocate to next strategies.")
+            return None
+        return (alloc, remaining_total, remaining_strategies)
 
     def assert_presence(self, elements: list, element_type: str, timeout: int = 30, rule: str = 'any'):
         self._validate_rule(rule)
         execution_logger.info(
             f"Asserting presence of elements: {elements} with rule: {rule} and timeout: {timeout}s")
 
-        # Treat the provided timeout as a total deadline across all applicable strategies.
         deadline = time.time() + timeout
         last_exception = None
-
-        # First collect strategies that can assert these elements so we can fairly split time
-        applicable_strategies = [s for s in self.locator_strategies if self._can_strategy_assert_elements(s, element_type)]
+        applicable_strategies = [
+            s for s in self.locator_strategies
+            if self._can_strategy_assert_elements(s, element_type)
+        ]
         if not applicable_strategies:
             raise OpticsError(Code.E0201, message="No elements found.")
 
-        remaining_total = max(0.0, deadline - time.time())
-
         for idx, strategy in enumerate(applicable_strategies):
             internal_logger.debug(f"Trying strategy: {type(strategy).__name__} for elements: {elements}")
-
-            # Recompute remaining total before allocating
-            remaining_total = max(0.0, deadline - time.time())
-            remaining_strategies = len(applicable_strategies) - idx
-
-            if remaining_total <= 0:
-                internal_logger.debug("No remaining time left to try further strategies.")
+            alloc_result = self._alloc_time_for_strategy(deadline, idx, applicable_strategies)
+            if alloc_result is None:
                 break
-
-            # Fair allocation: ceil(remaining_total / remaining_strategies)
-            alloc = int(math.ceil(remaining_total / remaining_strategies))
-            # Ensure alloc does not exceed remaining_total (cast to int seconds)
-            alloc = min(alloc, int(math.floor(remaining_total))) if remaining_total >= 1 else 0
-
-            internal_logger.debug(f"Allocating {alloc}s to strategy {type(strategy).__name__} (remaining_total={remaining_total}s, remaining_strategies={remaining_strategies})")
-
-            if alloc <= 0:
-                # If we have less than 1s remaining, let the last strategy try with 0 to perform any immediate checks
-                if idx == len(applicable_strategies) - 1:
-                    alloc = 0
-                else:
-                    internal_logger.debug("Insufficient time to allocate to next strategies.")
-                    break
-
+            alloc, remaining_total, remaining_strategies = alloc_result
+            internal_logger.debug(
+                f"Allocating {alloc}s to strategy {type(strategy).__name__} "
+                f"(remaining_total={remaining_total}s, remaining_strategies={remaining_strategies})"
+            )
             try:
-                result, timestamp, annotated_frame = self._try_assert_with_strategy(strategy, elements, alloc, rule)
+                result, timestamp, annotated_frame = self._try_assert_with_strategy(
+                    strategy, elements, alloc, rule
+                )
                 if result:
                     return result, timestamp, annotated_frame
             except Exception as e:
                 last_exception = e
 
-        # If we arrive here nothing was found within the total timeout
         if last_exception:
             internal_logger.debug(f"assert_presence ended with last exception: {last_exception}")
         raise OpticsError(Code.E0201, message="No elements found.")
@@ -561,10 +636,12 @@ class StrategyManager:
                 strategy.supports(element_type, strategy.element_source))
 
     def _try_assert_with_strategy(self, strategy, elements: list, timeout: int, rule: str):
-        """Try to assert elements using a specific strategy."""
+        """Try to assert elements using a specific strategy.
+
+        Strategies are required to return (result, timestamp, annotated_frame).
+        """
         try:
-            result_tuple = strategy.assert_elements(elements, timeout, rule)
-            result, timestamp, annotated_frame = result_tuple
+            result, timestamp, annotated_frame = strategy.assert_elements(elements, timeout, rule)
 
             if result:
                 execution_tracer.log_attempt(strategy, str(elements), "success")

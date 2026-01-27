@@ -1,10 +1,17 @@
 import re
-from typing import List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional, Union, cast
 from fuzzywuzzy import fuzz
 from lxml import etree
 from optics_framework.common.logging_config import internal_logger
 from optics_framework.common import utils
 ## Removed import of get_appium_driver (no longer needed)
+
+
+# XPath attribute sets for get_xpath (mobile-centric with web-friendly aliases)
+XPATH_UNIQUE_ATTRIBUTES = [
+    "name", "content-desc", "id", "resource-id", "accessibility-id",
+]
+XPATH_MAYBE_UNIQUE_ATTRIBUTES = ["label", "text", "value"]
 
 
 class UIHelper:
@@ -397,6 +404,36 @@ class UIHelper:
         attributes = {k: v for k, v in attributes.items() if v}
         return attributes
 
+    def _find_exact_or_suffix_match(
+        self, element: str, strategies: List[Tuple[str, str, str]], time_stamp: str
+    ) -> Optional[Dict]:
+        """First pass: return match dict for exact or suffix match, or None."""
+        for strategy_name, xpath_query, attrib in strategies:
+            elements = self.tree.xpath(xpath_query)
+            for elem in elements:
+                value = elem.attrib.get(attrib, "").strip()
+                if not value:
+                    continue
+                if value == element:
+                    internal_logger.debug("Exact match found.")
+                    internal_logger.debug(f"Match found using '{strategy_name}' strategy: '{value}'")
+                    return {
+                        "strategy": strategy_name,
+                        "locator": value,
+                        "attributes": elem.attrib,
+                        "timestamp": time_stamp,
+                    }
+                if "/" in value and value.rsplit("/", 1)[-1] == element:
+                    internal_logger.debug("Exact suffix match found.")
+                    internal_logger.debug(f"Match found using '{strategy_name}' strategy: '{value}'")
+                    return {
+                        "strategy": strategy_name,
+                        "locator": value,
+                        "attributes": elem.attrib,
+                        "timestamp": time_stamp,
+                    }
+        return None
+
     def get_locator_and_strategy(self, element):
         """
         Determines the best strategy and locator for the given element identifier.
@@ -413,39 +450,9 @@ class UIHelper:
             ("label", "//*[@label]", "label"),
         ]
 
-        # First pass: exact and suffix matches
-        for strategy_name, xpath_query, attrib in strategies:
-            elements = self.tree.xpath(xpath_query)
-            for elem in elements:
-                value = elem.attrib.get(attrib, "").strip()
-                if not value:
-                    continue
-                # Exact full match
-                if value == element:
-                    internal_logger.debug("Exact match found.")
-                    internal_logger.debug(
-                        f"Match found using '{strategy_name}' strategy: '{value}'"
-                    )
-                    attributes = elem.attrib
-                    return {
-                        "strategy": strategy_name,
-                        "locator": value,
-                        "attributes": attributes,
-                        "timestamp": time_stamp,
-                    }
-                # Exact suffix match (resource-id style)
-                if "/" in value and value.rsplit("/", 1)[-1] == element:
-                    internal_logger.debug("Exact suffix match found.")
-                    internal_logger.debug(
-                        f"Match found using '{strategy_name}' strategy: '{value}'"
-                    )
-                    attributes = elem.attrib
-                    return {
-                        "strategy": strategy_name,
-                        "locator": value,
-                        "attributes": attributes,
-                        "timestamp": time_stamp,
-                    }
+        exact = self._find_exact_or_suffix_match(element, strategies, time_stamp)
+        if exact is not None:
+            return exact
 
         # Second pass: collect fuzzy candidates and pick the best-scoring one
         best_candidate = None
@@ -456,8 +463,6 @@ class UIHelper:
                 value = elem.attrib.get(attrib, "").strip()
                 if not value:
                     continue
-                # Compute fuzzy score using the same metric as utils.compare_text
-                # but keep the best candidate across all strategies
                 try:
                     score = fuzz.ratio(value.lower().strip(), element.lower().strip())
                 except Exception:
@@ -466,7 +471,6 @@ class UIHelper:
                     best_score = score
                     best_candidate = (strategy_name, value, elem.attrib)
 
-        # Accept best fuzzy match if score meets threshold (80)
         if best_candidate and best_score >= 80:
             strategy_name, value, attributes = best_candidate
             internal_logger.debug(
@@ -935,6 +939,119 @@ class UIHelper:
         extra["tag"] = tag  # e.g., XCUIElementTypeButton or android.widget.Button
         return extra
 
+    def _xpath_determine_uniqueness(
+        self, node: etree.Element, doc_tree: Any, xpath: str
+    ) -> Tuple[bool, Optional[int]]:
+        """Return (True, None) if xpath matches exactly one node, else (False, index or None)."""
+        try:
+            matches = doc_tree.xpath(xpath)
+        except (etree.XPathError, ValueError, TypeError):
+            return False, None
+        if not matches:
+            return False, None
+        if len(matches) > 1:
+            try:
+                idx = matches.index(node)
+            except ValueError:
+                idx = 0
+            return False, idx
+        return True, None
+
+    def _xpath_from_single_attr(
+        self, node: etree.Element, attr_name: str, tag_for_xpath: str
+    ) -> Optional[str]:
+        val = node.attrib.get(attr_name)
+        if not val:
+            return None
+        lit = self._escape_for_xpath_literal(val)
+        return f"//{tag_for_xpath}[@{attr_name}={lit}]"
+
+    def _xpath_from_attr_pair(
+        self, node: etree.Element, attr_pair: Tuple[str, str], tag_for_xpath: str
+    ) -> Optional[str]:
+        a1, a2 = attr_pair
+        v1, v2 = node.attrib.get(a1), node.attrib.get(a2)
+        if not v1 or not v2:
+            return None
+        lit1, lit2 = self._escape_for_xpath_literal(v1), self._escape_for_xpath_literal(v2)
+        return f"//{tag_for_xpath}[@{a1}={lit1} and @{a2}={lit2}]"
+
+    def _xpath_try_attributes_for_unique(
+        self, node: etree.Element, doc_tree: Any, attrs: List[Union[str, Tuple[str, str]]]
+    ) -> Tuple[Optional[str], bool]:
+        tag_for_xpath = node.tag or "*"
+        is_pairs = bool(attrs and isinstance(attrs[0], tuple))
+        semi_unique_xpath: Optional[str] = None
+
+        for entry in attrs:
+            if is_pairs:
+                xpath = self._xpath_from_attr_pair(node, cast(Tuple[str, str], entry), tag_for_xpath)
+            else:
+                xpath = self._xpath_from_single_attr(node, cast(str, entry), tag_for_xpath)
+            if not xpath:
+                continue
+            is_unique, idx = self._xpath_determine_uniqueness(node, doc_tree, xpath)
+            if is_unique:
+                return xpath, True
+            if semi_unique_xpath is None and idx is not None:
+                semi_unique_xpath = f"({xpath})[{idx + 1}]"
+
+        if semi_unique_xpath:
+            return semi_unique_xpath, False
+        return None, False
+
+    def _xpath_try_node_name(
+        self, node: etree.Element, doc_tree: Any
+    ) -> Tuple[Optional[str], bool]:
+        tag = node.tag or "*"
+        xpath = f"//{tag}"
+        is_unique, _ = self._xpath_determine_uniqueness(node, doc_tree, xpath)
+        if not is_unique:
+            return None, False
+        if node.getparent() is None:
+            xpath = f"/{tag}"
+        return xpath, True
+
+    def _xpath_attribute_pairs_permutations(
+        self, attributes: List[str]
+    ) -> List[Tuple[str, str]]:
+        return [(v1, v2) for i, v1 in enumerate(attributes) for v2 in attributes[i + 1 :]]
+
+    def _xpath_try_cases_for_unique(self, node: etree.Element, doc_tree: Any) -> Optional[str]:
+        all_attrs = [*XPATH_UNIQUE_ATTRIBUTES, *XPATH_MAYBE_UNIQUE_ATTRIBUTES]
+        cases: List[Any] = [
+            XPATH_UNIQUE_ATTRIBUTES,
+            self._xpath_attribute_pairs_permutations(all_attrs),
+            XPATH_MAYBE_UNIQUE_ATTRIBUTES,
+            [],
+        ]
+        semi_unique: Optional[str] = None
+        for attrs in cases:
+            if len(attrs) == 0:
+                xpath, is_unique = self._xpath_try_node_name(node, doc_tree)
+            else:
+                xpath, is_unique = self._xpath_try_attributes_for_unique(node, doc_tree, attrs)
+            if is_unique and xpath:
+                return xpath
+            if semi_unique is None and xpath:
+                semi_unique = xpath
+        return semi_unique
+
+    def _xpath_build_hierarchical(self, node: etree.Element) -> str:
+        tag = node.tag
+        if not tag:
+            return ""
+        parent = node.getparent()
+        segment = f"/{tag}"
+        if parent is not None:
+            siblings_same_tag = [c for c in parent if c.tag == tag]
+            if len(siblings_same_tag) > 1:
+                idx = siblings_same_tag.index(node) + 1
+                segment += f"[{idx}]"
+        if parent is not None and hasattr(parent, "tag"):
+            return f"{self.get_xpath(parent)}{segment}"
+        return segment
+
     def get_xpath(self, node: etree.Element) -> str:
         """
         Generate an optimal XPath for a given node using attribute-based
@@ -942,168 +1059,13 @@ class UIHelper:
         hierarchical path when required. Mirrors the behavior of the
         provided getOptimalXPath logic.
         """
-        # Short-circuit for safety: ensure we have a valid element
         if node is None or not hasattr(node, "tag"):
             return ""
-
-        # Attribute sets (mobile-centric with web-friendly aliases)
-        UNIQUE_ATTRIBUTES = [
-            "name",
-            "content-desc",
-            "id",
-            "resource-id",
-            "accessibility-id",
-        ]
-        MAYBE_UNIQUE_ATTRIBUTES = ["label", "text", "value"]
-
-        # Utility: safely escape values for XPath literals
-        def lit(val: str) -> str:
-            return self._escape_for_xpath_literal(val)
-
-        # Obtain the document (tree) for this node so index comparisons work
         doc_tree = node.getroottree()
-
-        # Evaluate XPath against this node's document and determine uniqueness
-        def determine_xpath_uniqueness(xpath: str):
-            try:
-                matches = doc_tree.xpath(xpath)
-            except (etree.XPathError, ValueError, TypeError):
-                return False, None
-
-            # If no match, not useful
-            if not matches:
-                return False, None
-            # Multiple matches -> semi-unique, compute index of this node if present
-            if len(matches) > 1:
-                try:
-                    idx = matches.index(node)
-                except ValueError:
-                    idx = 0
-                return False, idx
-            # Exactly one match -> unique
-            return True, None
-
-        # Build XPath from a single attribute
-        def build_xpath_from_single_attribute(attr_name: str, tag_for_xpath: str):
-            val = node.attrib.get(attr_name)
-            if not val:
-                return None
-            return f"//{tag_for_xpath}[@{attr_name}={lit(val)}]"
-
-        # Build XPath from an attribute pair
-        def build_xpath_from_attribute_pair(attr_pair: tuple[str, str], tag_for_xpath: str):
-            a1, a2 = attr_pair
-            v1, v2 = node.attrib.get(a1), node.attrib.get(a2)
-            if not v1 or not v2:
-                return None
-            return f"//{tag_for_xpath}[@{a1}={lit(v1)} and @{a2}={lit(v2)}]"
-
-        # Semi-unique wrapper with explicit index (1-based)
-        def build_semi_unique_xpath(xpath: str, index: int) -> str:
-            return f"({xpath})[{index + 1}]"
-
-        # Try attributes (singles or pairs) for uniqueness, keeping first semi-unique
-        def try_attributes_for_unique_xpath(attrs):
-            tag_for_xpath = node.tag or "*"
-            is_pairs = bool(attrs and isinstance(attrs[0], tuple))
-            unique_xpath = None
-            semi_unique_xpath = None
-
-            for entry in attrs:
-                if is_pairs:
-                    xpath = build_xpath_from_attribute_pair(entry, tag_for_xpath)
-                else:
-                    xpath = build_xpath_from_single_attribute(entry, tag_for_xpath)
-                if not xpath:
-                    continue
-
-                is_unique, idx = determine_xpath_uniqueness(xpath)
-                if is_unique:
-                    unique_xpath = xpath
-                    break
-                if semi_unique_xpath is None and idx is not None:
-                    semi_unique_xpath = build_semi_unique_xpath(xpath, idx)
-
-            if unique_xpath:
-                return unique_xpath, True
-            if semi_unique_xpath:
-                return semi_unique_xpath, False
-            return None, None
-
-        # Try node name alone (//tag or /tag for root)
-        def try_node_name_xpath():
-            tag = node.tag or "*"
-            xpath = f"//{tag}"
-            is_unique, _ = determine_xpath_uniqueness(xpath)
-            if not is_unique:
-                return None, None
-            # If node has no parent, prefer absolute root path
-            if node.getparent() is None:
-                xpath = f"/{tag}"
-            return xpath, True
-
-        # Generate all attribute pair permutations
-        def build_attribute_pairs_permutations(attributes: list[str]) -> list[tuple[str, str]]:
-            pairs = []
-            for i, v1 in enumerate(attributes):
-                for v2 in attributes[i + 1 :]:
-                    pairs.append((v1, v2))
-            return pairs
-
-        # Ordered cases to try
-        def build_xpath_cases():
-            all_attrs = [*UNIQUE_ATTRIBUTES, *MAYBE_UNIQUE_ATTRIBUTES]
-            return [
-                UNIQUE_ATTRIBUTES,
-                build_attribute_pairs_permutations(all_attrs),
-                MAYBE_UNIQUE_ATTRIBUTES,
-                [],  # node name last
-            ]
-
-        # Try all cases; prefer fully unique, otherwise keep first semi-unique
-        def try_cases_for_unique_xpath():
-            semi_unique = None
-            for attrs in build_xpath_cases():
-                if len(attrs) == 0:
-                    xpath, is_unique = try_node_name_xpath()
-                else:
-                    xpath, is_unique = try_attributes_for_unique_xpath(attrs)
-                if is_unique:
-                    return xpath
-                if semi_unique is None and xpath:
-                    semi_unique = xpath
-            return semi_unique
-
-        # Build hierarchical XPath (short, index only when siblings share tag)
-        def build_hierarchical_xpath():
-            tag = node.tag
-            if not tag:
-                return ""
-
-            parent = node.getparent()
-            # Build current node segment with index only if needed
-            segment = f"/{tag}"
-            if parent is not None:
-                siblings_same_tag = [c for c in parent if c.tag == tag]
-                if len(siblings_same_tag) > 1:
-                    idx = siblings_same_tag.index(node) + 1
-                    segment += f"[{idx}]"
-
-            # If there is a parent, recurse to get parent's optimal path (which may be attribute-based)
-            if parent is not None and hasattr(parent, "tag"):
-                parent_xpath = self.get_xpath(parent)
-                return f"{parent_xpath}{segment}"
-
-            # No parent: return root absolute path
-            return segment
-
-        # 1) Try attribute-based uniqueness (singles, pairs, maybe-unique, node name)
-        candidate = try_cases_for_unique_xpath()
+        candidate = self._xpath_try_cases_for_unique(node, doc_tree)
         if candidate:
             return candidate
-
-        # 2) Fallback to hierarchical path
-        return build_hierarchical_xpath() or self._build_structural_xpath(node)
+        return self._xpath_build_hierarchical(node) or self._build_structural_xpath(node)
 
     def _escape_for_xpath_literal(self, s: str) -> str:
         """

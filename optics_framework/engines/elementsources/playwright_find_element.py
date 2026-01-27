@@ -1,5 +1,5 @@
 import time
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Tuple
 
 from playwright.sync_api import TimeoutError as PWTimeout
 from optics_framework.common.logging_config import internal_logger
@@ -147,6 +147,30 @@ class PlaywrightFindElement(ElementSourceInterface):
                 message=f"Error locating element: {element}",
                 cause=e,
             ) from e
+
+    def get_element_bboxes(
+        self, elements: List[str]
+    ) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
+        """Return bounding boxes for each element using Playwright bounding_box()."""
+        result: List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]] = []
+        for element in elements:
+            handle = self.locate(element)
+            if handle is None:
+                result.append(None)
+                continue
+            try:
+                bbox = run_async(handle.bounding_box())
+                if bbox is not None:
+                    x1 = int(bbox.get("x", 0))
+                    y1 = int(bbox.get("y", 0))
+                    x2 = int(x1 + bbox.get("width", 0))
+                    y2 = int(y1 + bbox.get("height", 0))
+                    result.append(((x1, y1), (x2, y2)))
+                else:
+                    result.append(None)
+            except (TypeError, ValueError, AttributeError, Exception):
+                result.append(None)
+        return result
 
     # --------------------------------------------------
     # Assertions

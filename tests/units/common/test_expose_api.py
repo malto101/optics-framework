@@ -81,19 +81,11 @@ if __name__ == "__main__":
         print("Session creation failed. Exiting.")
         exit(1)
 
-    # Optional: Dynamic Keyword Execution
-    # execute_keyword(session_id, "press_element", ["Continue As"])
-    # execute_keyword(session_id, "capture_screenshot")
-
     # Named endpoints (executed as pre-defined keywords)
     call_named_endpoint(session_id, "screenshot")
-    # call_named_endpoint(session_id, "elements")
-    # call_named_endpoint(session_id, "source")
-    # call_named_endpoint(session_id, "screen_elements")
 
     # Event stream listener
     time.sleep(1)
-    # listen_events(session_id)
 
     # Terminate session
     delete_session(session_id)

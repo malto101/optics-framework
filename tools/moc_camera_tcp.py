@@ -23,6 +23,7 @@ class ScreenshotTcpServer:
         self._host = host
         self._port = port
         self._server: Server | None = None
+        self._server_task: asyncio.Task[None] | None = None
         self._should_stop_event = asyncio.Event()
         self._capture_screenshot_fn = capture_screenshot_fn
         self.resource_id = f"ScreenshotServer:{host}:{port}"
@@ -32,7 +33,7 @@ class ScreenshotTcpServer:
             self._handle_client, self._host, self._port
         )
         logger.info(f"Asyncio TCP server listening on {self._host}:{self._port}")
-        asyncio.create_task(self._server.serve_forever())
+        self._server_task = asyncio.create_task(self._server.serve_forever())
 
     async def stop(self):
         logger.info(f"Stopping server {self.resource_id} ...")

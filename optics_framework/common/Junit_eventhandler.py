@@ -221,7 +221,7 @@ class JUnitEventHandler(EventSubscriber):
 
         sensitive_formatter = SensitiveDataFormatter()
         if event.logs:
-            internal_logger.info(f"Keyword {event.name} has logs: {event.logs}")
+            internal_logger.debug(f"Keyword {event.name} has logs: {event.logs}")
             for message in event.logs:
                 senitised_message = sensitive_formatter._sanitize(message)
                 log_element = ET.SubElement(kw_element, "log")

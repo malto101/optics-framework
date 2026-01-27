@@ -81,60 +81,73 @@ class FlowControl:
             return str(value[0])
         return str(value)
 
-    def execute_module(self, module_name: str) -> List[Any]:
-        """Executes a module's keywords using the session's keyword_map."""
+    def _get_validated_module_def(self, module_name: str) -> List[Tuple[str, List]]:
+        """Validate session and modules, return the module definition or raise."""
         self._ensure_session()
         if self.session is None:
             raise OpticsError(Code.E0702, message=NO_SESSION_PRESENT)
         if self.modules is None or not hasattr(self.modules, "modules") or module_name not in self.modules.modules:
             raise OpticsError(Code.E0601, message=f"Module '{module_name}' not found in modules.")
-        results = []
         module_def = self.modules.get_module_definition(module_name)
         if not module_def:
             raise OpticsError(Code.E0601, message=f"No definition found for module '{module_name}'.")
+        return module_def
+
+    def _try_get_module_definition(self, keyword: str) -> Optional[Any]:
+        """Return module definition for keyword if it names a module, else None."""
+        if not self.modules:
+            return None
+        try:
+            return self.modules.get_module_definition(keyword)
+        except Exception:
+            return None
+
+    def _execute_nested_module(self, parent_module: str, keyword: str) -> Any:
+        """Execute keyword as a nested module; raise on self-call or execution error."""
+        if keyword == parent_module:
+            raise OpticsError(Code.E0401, message=f"Module '{parent_module}' contains a self-call to '{keyword}'.")
+        internal_logger.debug(f"Keyword '{keyword}' not found in keyword_map; invoking module '{keyword}'.")
+        try:
+            return self.execute_module(keyword)
+        except Exception as e:
+            internal_logger.error(f"Error executing nested module '{keyword}': {e}")
+            raise OpticsError(Code.E0401, message=f"Error executing nested module '{keyword}': {e}", cause=e)
+
+    def _execute_keyword_method(
+        self, method: Callable[..., Any], keyword: str, params: List[Any]
+    ) -> Any:
+        """Resolve params, log, and call the keyword method; raise on error."""
+        raw_indices = getattr(method, "_raw_param_indices", [])
+        resolved_params = [
+            p if i in raw_indices else self._resolve_param(p)
+            for i, p in enumerate(params)
+        ]
+        execution_logger.info(f"Executing {keyword} with params: {resolved_params}")
+        try:
+            return method(*resolved_params)
+        except Exception as e:
+            internal_logger.error(f"Error executing keyword '{keyword}': {e}")
+            raise OpticsError(Code.E0401, message=f"Error executing keyword '{keyword}': {e}", cause=e)
+
+    def _execute_single_keyword(
+        self, module_name: str, keyword: str, params: List[Any]
+    ) -> Any:
+        """Execute one keyword: either as a mapped method or as a nested module."""
+        func_name = "_".join(keyword.split()).lower()
+        method = self.keyword_map.get(func_name)
+        if method is not None:
+            return self._execute_keyword_method(method, keyword, params)
+        nested_def = self._try_get_module_definition(keyword)
+        if nested_def is not None:
+            return self._execute_nested_module(module_name, keyword)
+        raise OpticsError(Code.E0402, message=f"Keyword '{keyword}' not found in keyword_map.")
+
+    def execute_module(self, module_name: str) -> List[Any]:
+        """Executes a module's keywords using the session's keyword_map."""
+        module_def = self._get_validated_module_def(module_name)
+        results = []
         for keyword, params in module_def:
-            func_name = "_".join(keyword.split()).lower()
-            method = self.keyword_map.get(func_name)
-            # If there's no direct keyword function, treat the keyword as a module name
-            if method is None:
-                # Use the ModuleData API to detect module definitions (preferred over direct dict access)
-                module_def = None
-                if self.modules:
-                    try:
-                        module_def = self.modules.get_module_definition(keyword)
-                    except Exception:
-                        module_def = None
-                if module_def is not None:
-                    internal_logger.debug(f"Keyword '{keyword}' not found in keyword_map; invoking module '{keyword}'.")
-                    # prevent obvious self-recursion
-                    if keyword == module_name:
-                        raise OpticsError(Code.E0401, message=f"Module '{module_name}' contains a self-call to '{keyword}'.")
-                    try:
-                        result = self.execute_module(keyword)
-                        results.append(result)
-                        continue
-                    except Exception as e:
-                        internal_logger.error(f"Error executing nested module '{keyword}': {e}")
-                        raise OpticsError(Code.E0401, message=f"Error executing nested module '{keyword}': {e}", cause=e)
-                # not a module and not a keyword -> error
-                raise OpticsError(Code.E0402, message=f"Keyword '{keyword}' not found in keyword_map.")
-            try:
-                raw_indices = getattr(method, "_raw_param_indices", [])
-                resolved_params = [
-                    param if i in raw_indices else self._resolve_param(param)
-                    for i, param in enumerate(params)
-                ]
-                internal_logger.debug(
-                    f"Executing {keyword} with params: {resolved_params}"
-                )
-                execution_logger.info(
-                    f"Executing {keyword} with params: {resolved_params}"
-                )
-                result = method(*resolved_params)
-                results.append(result)
-            except Exception as e:
-                internal_logger.error(f"Error executing keyword '{keyword}': {e}")
-                raise OpticsError(Code.E0401, message=f"Error executing keyword '{keyword}': {e}", cause=e)
+            results.append(self._execute_single_keyword(module_name, keyword, params))
         return results
 
     @raw_params(1, 3, 5, 7, 9, 11, 13, 15)
@@ -309,7 +322,7 @@ class FlowControl:
             if not cond_str:
                 continue
             if self._is_module_condition(cond_str):
-                result = self._handle_module_condition(cond_str, target, len(pairs))
+                result = self._handle_module_condition(cond_str, target)
                 if result is not None:
                     return result
             else:
@@ -330,7 +343,7 @@ class FlowControl:
         actual_cond = cond_str[1:].strip() if cond_str.startswith("!") else cond_str
         return self.modules.get_module_definition(actual_cond) is not None
 
-    def _handle_module_condition(self, cond_str: str, target: str, num_pairs: int) -> Optional[List[Any]]:
+    def _handle_module_condition(self, cond_str: str, target: str) -> Optional[List[Any]]:
         """Handles evaluation and execution for module-based conditions."""
         # Strip "!" prefix if present and determine if we need to invert the result
         invert = cond_str.startswith("!")

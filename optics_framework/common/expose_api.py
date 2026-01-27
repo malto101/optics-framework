@@ -7,7 +7,7 @@ import asyncio
 import warnings
 import hashlib
 from itertools import product
-from typing import Optional, Dict, Any, List, Union, cast, Callable
+from typing import Optional, Dict, Any, List, Union, cast, Callable, Tuple, NamedTuple
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import status
@@ -434,13 +434,155 @@ def _resolve_named_to_positional(
     return normalized_params
 
 
+class _NamedParamsContext(NamedTuple):
+    """Holds normalized named-param state for fallback execution."""
+
+    normalized_param_lists: List[List[str]]
+    provided_param_names: List[str]
+    all_param_names: List[str]
+    param_defaults: Dict[str, Any]
+    param_is_list: Dict[str, bool]
+
+
+def _keyword_execution_params(session_id: str, keyword: str, param_list: List[str]) -> ExecutionParams:
+    """Build ExecutionParams for a single keyword run."""
+    return ExecutionParams(
+        session_id=session_id,
+        mode="keyword",
+        keyword=keyword,
+        params=param_list,
+        runner_type="keyword",
+        use_printer=False,
+    )
+
+
+def _should_reraise(e: BaseException) -> bool:
+    """True if exception should be re-raised as-is (e.g. SystemExit)."""
+    return isinstance(e, (SystemExit, KeyboardInterrupt, GeneratorExit))
+
+
+def _build_named_param_context(
+    method: Callable[..., Any], params: Dict[str, Union[str, List[str]]]
+) -> _NamedParamsContext:
+    """Normalize named params and build context for fallback combos."""
+    sig = inspect.signature(method)
+    all_param_names = [p.name for p in sig.parameters.values() if p.name != "self"]
+    normalized_param_lists: List[List[str]] = []
+    provided_param_names: List[str] = []
+    param_defaults: Dict[str, Any] = {}
+    param_is_list: Dict[str, bool] = {}
+    for param_name in all_param_names:
+        param = sig.parameters[param_name]
+        is_list_param = _is_list_type(param.annotation)
+        param_is_list[param_name] = is_list_param
+        if param_name in params:
+            normalized_param_lists.append(
+                _normalize_param_value(param_name, params[param_name], is_list_param)
+            )
+            provided_param_names.append(param_name)
+        elif param.default != inspect.Parameter.empty:
+            param_defaults[param_name] = param.default
+        else:
+            raise ValueError(f"Required parameter '{param_name}' not provided in named params")
+    return _NamedParamsContext(
+        normalized_param_lists=normalized_param_lists,
+        provided_param_names=provided_param_names,
+        all_param_names=all_param_names,
+        param_defaults=param_defaults,
+        param_is_list=param_is_list,
+    )
+
+
+def _build_positional_normalized(
+    params: List[Union[str, List[str]]]
+) -> List[List[str]]:
+    """Normalize positional params to list-of-lists for fallback combos."""
+    return [_normalize_param_value(f"param_{i}", p) for i, p in enumerate(params)]
+
+
+def _combo_to_positional_named(
+    combo: tuple,
+    ctx: _NamedParamsContext,
+) -> List[str]:
+    """Map one named-param combo to positional args in method order."""
+    combo_dict = dict(zip(ctx.provided_param_names, combo))
+    out: List[str] = []
+    for param_name in ctx.all_param_names:
+        if param_name in combo_dict:
+            out.append(combo_dict[param_name])
+        elif param_name in ctx.param_defaults:
+            default_val = ctx.param_defaults[param_name]
+            if ctx.param_is_list.get(param_name, False) and isinstance(default_val, list):
+                out.append(json.dumps(default_val))
+            else:
+                out.append(default_val if isinstance(default_val, str) else str(default_val))
+    return out
+
+
+async def _execute_no_params(
+    engine: ExecutionEngine, session_id: str, keyword: str
+) -> Any:
+    """Run keyword with no params; raise RuntimeError on failure, re-raise SystemExit etc."""
+    try:
+        return await engine.execute(_keyword_execution_params(session_id, keyword, []))
+    except Exception as e:
+        if _should_reraise(e):
+            raise
+        raise RuntimeError(f"Keyword execution failed: {e}") from e
+
+
+async def _try_combos_named(
+    engine: ExecutionEngine,
+    session_id: str,
+    keyword: str,
+    ctx: _NamedParamsContext,
+) -> Any:
+    """Try each named-param combo; return first success or raise RuntimeError."""
+    errors: List[Tuple[tuple, str]] = []
+    for combo in product(*ctx.normalized_param_lists):
+        try:
+            args = _combo_to_positional_named(combo, ctx)
+            return await engine.execute(_keyword_execution_params(session_id, keyword, args))
+        except Exception as e:
+            if _should_reraise(e):
+                raise
+            errors.append((combo, repr(e)))
+    if not errors:
+        raise RuntimeError(f"No valid fallback values provided for keyword '{keyword}'")
+    msg = "\n".join([f"{c} -> {err}" for c, err in errors])
+    raise RuntimeError(f"All fallback attempts failed for keyword '{keyword}':\n{msg}")
+
+
+async def _try_combos_positional(
+    engine: ExecutionEngine,
+    session_id: str,
+    keyword: str,
+    normalized_param_lists: List[List[str]],
+) -> Any:
+    """Try each positional combo; return first success or raise RuntimeError."""
+    errors: List[Tuple[tuple, str]] = []
+    for combo in product(*normalized_param_lists):
+        try:
+            return await engine.execute(
+                _keyword_execution_params(session_id, keyword, list(combo))
+            )
+        except Exception as e:
+            if _should_reraise(e):
+                raise
+            errors.append((combo, repr(e)))
+    if not errors:
+        raise RuntimeError(f"No valid fallback values provided for keyword '{keyword}'")
+    msg = "\n".join([f"{c} -> {err}" for c, err in errors])
+    raise RuntimeError(f"All fallback attempts failed for keyword '{keyword}':\n{msg}")
+
+
 async def _execute_keyword_with_fallback(
     engine: ExecutionEngine,
     session_id: str,
     keyword: str,
     params: Union[List[Union[str, List[str]]], Dict[str, Union[str, List[str]]]],
     method: Callable[..., Any],
-    session: Session
+    session: Session,
 ) -> Any:
     """
     Execute a keyword via ExecutionEngine with fallback parameter support.
@@ -460,125 +602,18 @@ async def _execute_keyword_with_fallback(
     Raises:
         RuntimeError: If all fallback attempts fail
     """
-    # Detect parameter format and normalize
     if isinstance(params, dict):
-        # Named parameters: convert to positional based on method signature
-        sig = inspect.signature(method)
-        all_param_names = [p.name for p in sig.parameters.values() if p.name != "self"]
-
-        normalized_param_lists = []
-        provided_param_names = []
-        param_defaults = {}  # Store defaults for later use
-        param_is_list = {}  # Track which parameters are list types
-        for param_name in all_param_names:
-            param = sig.parameters[param_name]
-            is_list_param = _is_list_type(param.annotation)
-            param_is_list[param_name] = is_list_param
-
-            if param_name in params:
-                normalized_param_lists.append(_normalize_param_value(param_name, params[param_name], is_list_param))
-                provided_param_names.append(param_name)
-            else:
-                # Parameter not provided, check if it has a default
-                if param.default != inspect.Parameter.empty:
-                    # Has default - store it but don't include in fallback combinations
-                    # We'll use the default value directly when building positional args
-                    param_defaults[param_name] = param.default
-                else:
-                    # Required parameter missing
-                    raise ValueError(f"Required parameter '{param_name}' not provided in named params")
+        ctx = _build_named_param_context(method, params)
+        normalized_param_lists = ctx.normalized_param_lists
     else:
-        # Positional parameters: normalize each one
-        normalized_param_lists = [
-            _normalize_param_value(f"param_{i}", param)
-            for i, param in enumerate(params)
-        ]
+        ctx = None
+        normalized_param_lists = _build_positional_normalized(params)
 
-    # Generate all combinations using itertools.product
     if not normalized_param_lists:
-        # No parameters, just execute
-        try:
-            execution_params = ExecutionParams(
-                session_id=session_id,
-                mode="keyword",
-                keyword=keyword,
-                params=[],
-                runner_type="keyword",
-                use_printer=False
-            )
-            return await engine.execute(execution_params)
-        except Exception as e:
-            if isinstance(e, (SystemExit, KeyboardInterrupt, GeneratorExit)):
-                raise
-            raise RuntimeError(f"Keyword execution failed: {e}") from e
-
-    # For named params, we need to convert to positional in method signature order
-    if isinstance(params, dict):
-        # Try each combination
-        errors: List[tuple[tuple, str]] = []
-        for combo in product(*normalized_param_lists):
-            try:
-                # Convert named params combo to positional args for ExecutionEngine
-                # Map combo values to their parameter names, then build positional list in method order
-                combo_dict = dict(zip(provided_param_names, combo))
-                positional_args = []
-                for param_name in all_param_names:
-                    if param_name in combo_dict:
-                        # Parameter was provided in request
-                        param_value = combo_dict[param_name]
-                        # If this is a list parameter and the value is a JSON string, keep it as-is
-                        # Otherwise, it's already a string from the fallback mechanism
-                        positional_args.append(param_value)
-                    elif param_name in param_defaults:
-                        # Parameter has a default - we need to include it
-                        default_val = param_defaults[param_name]
-                        # If it's a list parameter, serialize it as JSON
-                        if param_is_list.get(param_name, False) and isinstance(default_val, list):
-                            positional_args.append(json.dumps(default_val))
-                        else:
-                            # Convert default to string since ExecutionParams.params is List[str]
-                            positional_args.append(str(default_val) if not isinstance(default_val, str) else default_val)
-                    # If param not in combo_dict and not in param_defaults, it's required and should have been caught earlier
-
-                execution_params = ExecutionParams(
-                    session_id=session_id,
-                    mode="keyword",
-                    keyword=keyword,
-                    params=positional_args,
-                    runner_type="keyword",
-                    use_printer=False
-                )
-                return await engine.execute(execution_params)
-            except Exception as e:
-                if isinstance(e, (SystemExit, KeyboardInterrupt, GeneratorExit)):
-                    raise
-                errors.append((combo, repr(e)))
-    else:
-        # Positional params: try each combination
-        errors: List[tuple[tuple, str]] = []
-        for combo in product(*normalized_param_lists):
-            try:
-                execution_params = ExecutionParams(
-                    session_id=session_id,
-                    mode="keyword",
-                    keyword=keyword,
-                    params=list(combo),
-                    runner_type="keyword",
-                    use_printer=False
-                )
-                return await engine.execute(execution_params)
-            except Exception as e:
-                if isinstance(e, (SystemExit, KeyboardInterrupt, GeneratorExit)):
-                    raise
-                errors.append((combo, repr(e)))
-
-    # All combinations failed
-    if errors:
-        msg = "\n".join([f"{c} -> {err}" for c, err in errors])
-        raise RuntimeError(
-            f"All fallback attempts failed for keyword '{keyword}':\n{msg}"
-        )
-    raise RuntimeError(f"No valid fallback values provided for keyword '{keyword}'")
+        return await _execute_no_params(engine, session_id, keyword)
+    if ctx is not None:
+        return await _try_combos_named(engine, session_id, keyword, ctx)
+    return await _try_combos_positional(engine, session_id, keyword, normalized_param_lists)
 
 
 @app.post("/v1/sessions/{session_id}/action")

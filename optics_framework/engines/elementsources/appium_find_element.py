@@ -1,5 +1,5 @@
 import time
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Tuple
 from appium.webdriver.webdriver import WebDriver
 from appium.webdriver.common.appiumby import AppiumBy
 from lxml import etree # type: ignore
@@ -96,7 +96,7 @@ class AppiumFindElement(ElementSourceInterface):
         driver = self._require_driver()
         element_type = utils.determine_element_type(element)
 
-        if index is not None:
+        if index is not None and index != 0:
             raise OpticsError(Code.E0202, message='Appium Find Element does not support locating elements using index.')
 
         if element_type == 'Image':
@@ -115,8 +115,46 @@ class AppiumFindElement(ElementSourceInterface):
                 found_element = driver.find_element(AppiumBy.ACCESSIBILITY_ID, element)
             except Exception as e:
                 internal_logger.exception(f" element: {element}", exc_info=e)
-                raise Exception(f"Element not found: {element}")
+                raise OpticsError(Code.E0201, message=f"Element not found: {element}", cause=e) from e
             return found_element
+        return None
+
+    def get_element_bboxes(
+        self, elements: List[str]
+    ) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
+        """Return bounding boxes for each element using WebElement location and size."""
+        result: List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]] = []
+        for element in elements:
+            obj = self.locate(element)
+            if obj is None:
+                result.append(None)
+                continue
+            try:
+                loc = getattr(obj, "location", None)
+                sz = getattr(obj, "size", None)
+                if loc is not None and sz is not None:
+                    x1 = int(loc.get("x", 0))
+                    y1 = int(loc.get("y", 0))
+                    x2 = int(x1 + sz.get("width", 0))
+                    y2 = int(y1 + sz.get("height", 0))
+                    result.append(((x1, y1), (x2, y2)))
+                else:
+                    result.append(None)
+            except (TypeError, ValueError, AttributeError):
+                result.append(None)
+        return result
+
+    def _assert_elements_one_pass(
+        self, elements: List[str], found: dict, rule: str
+    ) -> Optional[Tuple[bool, Any]]:
+        """Run one pass over elements; return (True, timestamp) if rule is satisfied, else None."""
+        for el in elements:
+            if not found[el] and self.locate(el):
+                found[el] = True
+                if rule == "any":
+                    return (True, utils.get_timestamp())
+        if rule == "all" and all(found.values()):
+            return (True, utils.get_timestamp())
         return None
 
     def assert_elements(self, elements: List[str], timeout: int = 10, rule: str = "any"):
@@ -143,14 +181,9 @@ class AppiumFindElement(ElementSourceInterface):
 
         while time.time() - start_time < timeout:
             try:
-                for el in elements:
-                    if not found[el] and self.locate(el):
-                        found[el] = True
-                        if rule == "any":
-                            return True, utils.get_timestamp()
-                if rule == "all" and all(found.values()):
-                    return True, utils.get_timestamp()
+                result = self._assert_elements_one_pass(elements, found, rule)
+                if result is not None:
+                    return result
             except Exception as e:
-                # internal_logger.error("Error during element assertion: %s", e, exc_info=True)
-                raise OpticsError(Code.E0401, message=f"Error during element assertion: {e}" ) from e
+                raise OpticsError(Code.E0401, message=f"Error during element assertion: {e}") from e
         return False, utils.get_timestamp()

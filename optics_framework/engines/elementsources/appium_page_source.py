@@ -1,6 +1,6 @@
 from typing import Optional, Any, Tuple, List
 import time
-from lxml import etree # type: ignore
+from lxml import etree  # type: ignore
 from appium.webdriver.webdriver import WebDriver
 from appium.webdriver.common.appiumby import AppiumBy
 from optics_framework.common.logging_config import internal_logger
@@ -125,6 +125,33 @@ class AppiumPageSource(ElementSourceInterface):
                 raise RuntimeError(APPIUM_NOT_INITIALISED_MSG)
         raise RuntimeError("Unknown element type.")
 
+    def get_element_bboxes(
+        self, elements: List[str]
+    ) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
+        """Return bounding boxes for each element using WebElement location and size."""
+        result: List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]] = []
+        for element in elements:
+            try:
+                obj = self.locate(element)
+            except Exception:
+                obj = None
+            if obj is None:
+                result.append(None)
+                continue
+            try:
+                loc = getattr(obj, "location", None)
+                sz = getattr(obj, "size", None)
+                if loc is not None and sz is not None:
+                    x1 = int(loc.get("x", 0))
+                    y1 = int(loc.get("y", 0))
+                    x2 = int(x1 + sz.get("width", 0))
+                    y2 = int(y1 + sz.get("height", 0))
+                    result.append(((x1, y1), (x2, y2)))
+                else:
+                    result.append(None)
+            except (TypeError, ValueError, AttributeError):
+                result.append(None)
+        return result
 
     def locate_using_index(self, element, index, strategy=None) -> Optional[Any]:
         if self.driver is not None and hasattr(self.driver, "ui_helper") and self.driver.ui_helper is not None:

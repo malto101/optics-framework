@@ -16,7 +16,7 @@
     .container {
       max-width: 1100px;
       margin: 2em auto;
-      background: #fff;
+      background: #fafafa;
       border-radius: 16px;
       box-shadow: 0 4px 24px #b3c2e0;
       padding: 2.5em 2em 2em 2em;
@@ -90,7 +90,7 @@
       padding: 0.6em 1.5em;
       border: none;
       border-radius: 6px;
-      background: linear-gradient(90deg, #007bff 60%, #4f8cff 100%);
+      background: linear-gradient(90deg, #0056b3 60%, #0066cc 100%);
       color: #fff;
       font-weight: 600;
       cursor: pointer;
@@ -101,7 +101,7 @@
 
     button:disabled {
       background: #b3c2e0;
-      color: #fff;
+      color: #25396c;
       cursor: not-allowed;
     }
 
@@ -133,7 +133,7 @@
       margin-top: 1em;
       box-shadow: 0 2px 8px #e3eafc;
       object-fit: contain;
-      background: #fff;
+      background: #fafafa;
       display: block;
       margin-left: auto;
       margin-right: auto;
@@ -163,7 +163,7 @@
 
     .session-id {
       font-size: 0.95em;
-      color: #007bff;
+      color: #003d82;
       font-weight: 600;
       background: #e3eafc;
       border-radius: 6px;
@@ -172,6 +172,17 @@
       display: inline-block;
     }
 
+    fieldset.element-filters {
+      border: none;
+      padding: 0;
+      margin: 0 0 1em 0;
+    }
+    fieldset.element-filters legend {
+      display: block;
+      margin-bottom: 0.3em;
+      font-weight: 600;
+      color: #2a3a5e;
+    }
     .checkbox-group {
       display: flex;
       flex-wrap: wrap;
@@ -266,8 +277,9 @@
             </div>
           </form>
           <div class="form-group">
-            <label>Element Filters</label>
-            <div class="checkbox-group">
+            <fieldset class="element-filters">
+              <legend>Element Filters</legend>
+              <div class="checkbox-group">
               <label class="checkbox-label">
                 <input type="checkbox" id="filter_all" value="all" onchange="handleAllFilter()">
                 <span>All</span>
@@ -293,6 +305,7 @@
                 <span>Text</span>
               </label>
             </div>
+            </fieldset>
           </div>
           <div class="button-group">
             <button type="button" onclick="getScreenshot()">Get Screenshot</button>
@@ -389,19 +402,31 @@
       return entries;
     }
 
-    function addDriverEntry(name = 'appium', config = {enabled: true, url: 'http://localhost:4723', capabilities: {appActivity: 'com.android.contacts.activities.PeopleActivity', appPackage: 'com.google.android.contacts', automationName: 'UiAutomator2', deviceName: 'emulator-5554', platformName: 'Android'}}) {
+    function addDriverEntry(name = 'appium', config) {
+      if (config == null) {
+        config = { enabled: true, url: 'http://localhost:4723', capabilities: { appActivity: 'com.android.contacts.activities.PeopleActivity', appPackage: 'com.google.android.contacts', automationName: 'UiAutomator2', deviceName: 'emulator-5554', platformName: 'Android' } };
+      }
       addListEntry('driver_list', name, JSON.stringify(config, null, 2));
     }
 
-    function addElementEntry(name = 'appium_find_element', config = {enabled: true}) {
+    function addElementEntry(name = 'appium_find_element', config) {
+      if (config == null) {
+        config = { enabled: true };
+      }
       addListEntry('elements_list', name, JSON.stringify(config, null, 2));
     }
 
-    function addTextEntry(name = 'easyocr', config = {enabled: false}) {
+    function addTextEntry(name = 'easyocr', config) {
+      if (config == null) {
+        config = { enabled: false };
+      }
       addListEntry('text_list', name, JSON.stringify(config, null, 2));
     }
 
-    function addImageEntry(name = 'templatematch', config = {enabled: false}) {
+    function addImageEntry(name = 'templatematch', config) {
+      if (config == null) {
+        config = { enabled: false };
+      }
       addListEntry('image_list', name, JSON.stringify(config, null, 2));
     }
 
