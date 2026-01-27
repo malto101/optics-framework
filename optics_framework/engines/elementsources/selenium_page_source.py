@@ -125,6 +125,12 @@ class SeleniumPageSource(ElementSourceInterface):
 
         return utils.bboxes_from_webelements(locate_safe, elements)
 
+    def get_bbox_for_element(
+        self, element: Any
+    ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """Return bounding box for an already-located WebElement."""
+        return utils.bbox_from_webelement_like(element)
+
     def _find_element_by_any(self, driver: Any, locator_value: str) -> Any:
         """
         Try locating an element using all known Selenium strategies.

@@ -159,22 +159,26 @@ class PlaywrightFindElement(ElementSourceInterface):
             except Exception:
                 result.append(None)
                 continue
-            if handle is None:
-                result.append(None)
-                continue
-            try:
-                bbox = run_async(handle.bounding_box())
-                if bbox is not None:
-                    x1 = int(bbox.get("x", 0))
-                    y1 = int(bbox.get("y", 0))
-                    x2 = int(x1 + bbox.get("width", 0))
-                    y2 = int(y1 + bbox.get("height", 0))
-                    result.append(((x1, y1), (x2, y2)))
-                else:
-                    result.append(None)
-            except (TypeError, ValueError, AttributeError):
-                result.append(None)
+            result.append(self.get_bbox_for_element(handle))
         return result
+
+    def get_bbox_for_element(
+        self, element: Any
+    ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """Return bounding box for an already-located Playwright element handle."""
+        if element is None:
+            return None
+        try:
+            bbox = run_async(element.bounding_box())
+            if bbox is not None:
+                x1 = int(bbox.get("x", 0))
+                y1 = int(bbox.get("y", 0))
+                x2 = int(x1 + bbox.get("width", 0))
+                y2 = int(y1 + bbox.get("height", 0))
+                return ((x1, y1), (x2, y2))
+        except (TypeError, ValueError, AttributeError):
+            pass
+        return None
 
     # --------------------------------------------------
     # Assertions

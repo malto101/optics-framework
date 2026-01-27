@@ -564,6 +564,86 @@ def _is_list_type(param_type: Any) -> bool:
     return _is_list_like(param_type)
 
 
+def bbox_from_appium_attribute_fallback(element: Any) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+    """
+    Parse bounding box from Appium element get_attribute results.
+    Android: get_attribute("bounds") returns "[x1,y1][x2,y2]".
+    iOS (XCUITest): get_attribute("rect") returns a dict or JSON string with x, y, width, height.
+
+    :param element: WebElement-like object with get_attribute.
+    :return: ((x1,y1), (x2,y2)) or None if not available.
+    """
+    get_attr = getattr(element, "get_attribute", None)
+    if get_attr is None:
+        return None
+    # Android: bounds="[x1,y1][x2,y2]"
+    try:
+        bounds = get_attr("bounds")
+        if bounds and isinstance(bounds, str):
+            nums = re.findall(r"\d+", bounds)
+            if len(nums) == 4:
+                x1, y1, x2, y2 = map(int, nums)
+                return ((x1, y1), (x2, y2))
+    except (TypeError, ValueError, AttributeError):
+        pass
+    # iOS: rect as dict or JSON string
+    try:
+        rect = get_attr("rect")
+        if rect is None:
+            return None
+        if isinstance(rect, dict):
+            x, y = int(rect.get("x", 0)), int(rect.get("y", 0))
+            w, h = int(rect.get("width", 0)), int(rect.get("height", 0))
+            return ((x, y), (x + w, y + h))
+        if isinstance(rect, str):
+            parsed = json.loads(rect)
+            if isinstance(parsed, dict):
+                x = int(parsed.get("x", 0))
+                y = int(parsed.get("y", 0))
+                w = int(parsed.get("width", 0))
+                h = int(parsed.get("height", 0))
+                return ((x, y), (x + w, y + h))
+    except (TypeError, ValueError, AttributeError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def bbox_from_webelement_like(obj: Any) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+    """
+    Return bounding box for a single WebElement-like object with .location/.size or .rect.
+
+    Works for both Android (UIAutomator2) and iOS (XCUITest); both expose W3C-compatible
+    location, size, and rect on the WebElement.
+
+    :param obj: WebElement-like object with .location and .size dicts, or .rect (Selenium 4/Appium).
+    :return: ((x1,y1), (x2,y2)) or None if not available.
+    """
+    if obj is None:
+        return None
+    try:
+        loc = getattr(obj, "location", None)
+        sz = getattr(obj, "size", None)
+        if loc is not None and sz is not None:
+            x1 = int(loc.get("x", 0))
+            y1 = int(loc.get("y", 0))
+            x2 = int(x1 + sz.get("width", 0))
+            y2 = int(y1 + sz.get("height", 0))
+            return ((x1, y1), (x2, y2))
+    except (TypeError, ValueError, AttributeError):
+        pass
+    try:
+        rect = getattr(obj, "rect", None)
+        if rect is not None and isinstance(rect, dict):
+            x1 = int(rect.get("x", 0))
+            y1 = int(rect.get("y", 0))
+            w = int(rect.get("width", 0))
+            h = int(rect.get("height", 0))
+            return ((x1, y1), (x1 + w, y1 + h))
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return None
+
+
 def bboxes_from_webelements(
     locate_fn: Callable[[str], Any],
     elements: List[str],
@@ -584,20 +664,5 @@ def bboxes_from_webelements(
         except Exception:
             result.append(None)
             continue
-        if obj is None:
-            result.append(None)
-            continue
-        try:
-            loc = getattr(obj, "location", None)
-            sz = getattr(obj, "size", None)
-            if loc is not None and sz is not None:
-                x1 = int(loc.get("x", 0))
-                y1 = int(loc.get("y", 0))
-                x2 = int(x1 + sz.get("width", 0))
-                y2 = int(y1 + sz.get("height", 0))
-                result.append(((x1, y1), (x2, y2)))
-            else:
-                result.append(None)
-        except (TypeError, ValueError, AttributeError):
-            result.append(None)
+        result.append(bbox_from_webelement_like(obj))
     return result

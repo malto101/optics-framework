@@ -136,6 +136,12 @@ class SeleniumFindElement(ElementSourceInterface):
         """Return bounding boxes for each element using WebElement location and size."""
         return utils.bboxes_from_webelements(self.locate, elements)
 
+    def get_bbox_for_element(
+        self, element: Any
+    ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """Return bounding box for an already-located WebElement."""
+        return utils.bbox_from_webelement_like(element)
+
     def assert_elements(self, elements: list, timeout: int = 10, rule: str = "any") -> None:
         """
         Assert that elements are present based on the specified rule using Selenium.

@@ -182,12 +182,22 @@ class TextDetectionStrategy(LocatorStrategy):
     def element_source(self) -> ElementSourceInterface:
         return self._element_source
 
-    def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int]]:
+    def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int], Tuple]:
         if self.text_detection is None:
             raise OpticsError(Code.E0201, message=TEXT_DETECTION_NOT_AVAILABLE_MSG)
         screenshot = self.element_source.capture()
-        _, coor, _ = self.text_detection.find_element(screenshot, element, index=index)
-        return coor
+        found = self.text_detection.find_element(screenshot, element, index=index)
+        if found is None:
+            return None
+        _, coor, bbox = found
+        if coor is None or (
+            isinstance(coor, tuple) and len(coor) == 2 and coor[0] is None and coor[1] is None
+        ):
+            return None
+        annotated_frame = None
+        if bbox is not None and len(bbox) == 2 and bbox[0] is not None and bbox[1] is not None:
+            annotated_frame = utils.annotate(screenshot.copy(), [bbox])
+        return (coor, annotated_frame)
 
     def locate_with_aoi(self, element: str, aoi_x: float, aoi_y: float, aoi_width: float, aoi_height: float, index: float=0) -> Union[object, Tuple[int, int]]:
         """
@@ -215,16 +225,26 @@ class TextDetectionStrategy(LocatorStrategy):
             raise OpticsError(Code.E0205, message=f"Invalid AOI parameters: {e}")
 
         # Find element in cropped screenshot
-        _, coor, _ = self.text_detection.find_element(cropped_screenshot, element, index=index)
+        found = self.text_detection.find_element(cropped_screenshot, element, index=index)
+        if found is None:
+            return None
+        _, coor, bbox = found
 
-        if coor is None:
+        if coor is None or (
+            isinstance(coor, tuple) and len(coor) == 2 and coor[0] is None and coor[1] is None
+        ):
             return None
 
         # Adjust coordinates back to full screenshot
         try:
             adjusted_coor = utils.adjust_coordinates_for_aoi(coor, aoi_bounds)
             internal_logger.debug(f"Text element '{element}' found at AOI coordinates {coor}, adjusted to full screenshot coordinates {adjusted_coor}")
-            return adjusted_coor
+            annotated_frame = None
+            if bbox is not None and len(bbox) == 2 and bbox[0] is not None and bbox[1] is not None:
+                adjusted_tl = utils.adjust_coordinates_for_aoi(bbox[0], aoi_bounds)
+                adjusted_br = utils.adjust_coordinates_for_aoi(bbox[1], aoi_bounds)
+                annotated_frame = utils.annotate(full_screenshot.copy(), [(adjusted_tl, adjusted_br)])
+            return (adjusted_coor, annotated_frame)
         except ValueError as e:
             internal_logger.debug(f"Coordinate adjustment failed for TextDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Coordinate adjustment failed: {e}")
@@ -283,12 +303,20 @@ class ImageDetectionStrategy(LocatorStrategy):
     def element_source(self) -> ElementSourceInterface:
         return self._element_source
 
-    def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int]]:
+    def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int], Tuple]:
         screenshot = self.element_source.capture()
-        _, centre, _ = self.image_detection.find_element(screenshot, element, index)
-        return centre
+        found = self.image_detection.find_element(screenshot, element, index)
+        if found is None:
+            return None
+        _, centre, bbox = found
+        if centre is None:
+            return None
+        annotated_frame = None
+        if bbox is not None and len(bbox) == 2 and bbox[0] is not None and bbox[1] is not None:
+            annotated_frame = utils.annotate(screenshot.copy(), [bbox])
+        return (centre, annotated_frame)
 
-    def locate_with_aoi(self, element: str, aoi_x: float, aoi_y: float, aoi_width: float, aoi_height: float) -> Union[object, Tuple[int, int]]:
+    def locate_with_aoi(self, element: str, aoi_x: float, aoi_y: float, aoi_width: float, aoi_height: float, index: int = 0) -> Union[object, Tuple[int, int], Tuple]:
         """
         Locate image element within a specified Area of Interest (AOI).
 
@@ -297,7 +325,8 @@ class ImageDetectionStrategy(LocatorStrategy):
         :param aoi_y: Y percentage of AOI top-left corner (0-100)
         :param aoi_width: Width percentage of AOI (0-100)
         :param aoi_height: Height percentage of AOI (0-100)
-        :return: Coordinates relative to the full screenshot
+        :param index: Zero-based index when multiple matches exist (default 0)
+        :return: Coordinates relative to the full screenshot, or (coords, annotated_frame)
         """
         # Capture full screenshot
         full_screenshot = self.element_source.capture()
@@ -312,7 +341,10 @@ class ImageDetectionStrategy(LocatorStrategy):
             raise OpticsError(Code.E0205, message=f"Invalid AOI parameters: {e}")
 
         # Find element in cropped screenshot
-        _, centre, _ = self.image_detection.find_element(cropped_screenshot, element)
+        found = self.image_detection.find_element(cropped_screenshot, element, index)
+        if found is None:
+            return None
+        _, centre, bbox = found
 
         if centre is None:
             return None
@@ -321,7 +353,12 @@ class ImageDetectionStrategy(LocatorStrategy):
         try:
             adjusted_centre = utils.adjust_coordinates_for_aoi(centre, aoi_bounds)
             internal_logger.debug(f"Image element '{element}' found at AOI coordinates {centre}, adjusted to full screenshot coordinates {adjusted_centre}")
-            return adjusted_centre
+            annotated_frame = None
+            if bbox is not None and len(bbox) == 2 and bbox[0] is not None and bbox[1] is not None:
+                adjusted_tl = utils.adjust_coordinates_for_aoi(bbox[0], aoi_bounds)
+                adjusted_br = utils.adjust_coordinates_for_aoi(bbox[1], aoi_bounds)
+                annotated_frame = utils.annotate(full_screenshot.copy(), [(adjusted_tl, adjusted_br)])
+            return (adjusted_centre, annotated_frame)
         except ValueError as e:
             internal_logger.debug(f"Coordinate adjustment failed for ImageDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Coordinate adjustment failed: {e}")
@@ -459,9 +496,15 @@ class ScreenshotFactory:
 class LocateResult:
     """Wrapper for location results from a strategy."""
 
-    def __init__(self, value: Union[object, Tuple[int, int]], strategy: LocatorStrategy):
+    def __init__(
+        self,
+        value: Union[object, Tuple[int, int]],
+        strategy: LocatorStrategy,
+        annotated_frame: Optional[Any] = None,
+    ):
         self.value = value
         self.strategy = strategy
+        self.annotated_frame = annotated_frame
         self.is_coordinates = isinstance(value, tuple)
 
 
@@ -534,9 +577,17 @@ class StrategyManager:
                 result = locate_with_aoi(element, aoi_x, aoi_y, aoi_width, aoi_height, index=index)
             else:
                 result = strategy.locate(element, index=index)
-            if result:
-                execution_tracer.log_attempt(strategy, element, "success")
-                return LocateResult(result, strategy)
+            if result is None:
+                return None
+            # Unpack (value, annotated_frame) when vision strategies return it
+            if isinstance(result, tuple) and len(result) == 2:
+                value, annotated_frame = result[0], result[1]
+                if annotated_frame is None or not hasattr(annotated_frame, "shape"):
+                    annotated_frame = None
+            else:
+                value, annotated_frame = result, None
+            execution_tracer.log_attempt(strategy, element, "success")
+            return LocateResult(value, strategy, annotated_frame=annotated_frame)
         except Exception as e:
             execution_tracer.log_attempt(strategy, element, "fail", error=str(e))
             internal_logger.debug(f"Strategy {strategy.__class__.__name__} failed: {e}")

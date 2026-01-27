@@ -1,5 +1,5 @@
-from typing import Optional, Any, Tuple, List
 import time
+from typing import Optional, Any, Tuple, List
 from lxml import etree  # type: ignore
 from appium.webdriver.webdriver import WebDriver
 from appium.webdriver.common.appiumby import AppiumBy
@@ -128,8 +128,11 @@ class AppiumPageSource(ElementSourceInterface):
     def get_element_bboxes(
         self, elements: List[str]
     ) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
-        """Return bounding boxes for each element using WebElement location and size."""
-
+        """
+        Return bounding boxes for each element using WebElement location and size.
+        Compatible with Android (UIAutomator2) and iOS (XCUITest); both expose
+        W3C location/size/rect on the WebElement.
+        """
         def locate_safe(element: str) -> Any:
             try:
                 return self.locate(element)
@@ -137,6 +140,19 @@ class AppiumPageSource(ElementSourceInterface):
                 return None
 
         return utils.bboxes_from_webelements(locate_safe, elements)
+
+    def get_bbox_for_element(
+        self, element: Any
+    ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """
+        Return bounding box for an already-located Appium WebElement.
+        Uses location/size or rect first (Android and iOS); falls back to
+        get_attribute("bounds") (Android) or get_attribute("rect") (iOS).
+        """
+        bbox = utils.bbox_from_webelement_like(element)
+        if bbox is not None:
+            return bbox
+        return utils.bbox_from_appium_attribute_fallback(element)
 
     def locate_using_index(self, element, index, strategy=None) -> Optional[Any]:
         if self.driver is not None and hasattr(self.driver, "ui_helper") and self.driver.ui_helper is not None:
@@ -200,7 +216,9 @@ class AppiumPageSource(ElementSourceInterface):
 
         # Timeout reached
         internal_logger.warning(f"Timeout reached. Rule: {rule}, Elements: {elements}")
-        return False, utils.get_timestamp()
+        raise TimeoutError(
+            f"Timeout reached: Elements not found based on rule '{rule}': {elements}"
+        )
 
     def _validate_rule(self, rule):
         if rule not in ["any", "all"]:

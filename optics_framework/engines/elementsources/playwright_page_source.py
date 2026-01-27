@@ -1042,4 +1042,6 @@ class PlaywrightPageSource(ElementSourceInterface):
             "[PlaywrightPageSource] Timeout reached. rule=%s elements=%s",
             rule, elements
         )
-        return False, utils.get_timestamp()
+        raise TimeoutError(
+            f"Timeout reached: Elements not found based on rule '{rule}': {elements}"
+        )

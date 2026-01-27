@@ -33,12 +33,10 @@ def with_self_healing(func: Callable) -> Callable:
         # Check if AOI is being used (i.e., AOI parameters after parsing are not the default float values: 0, 0, 100, 100)
         is_aoi_used = not (aoi_x == 0 and aoi_y == 0 and aoi_width == 100 and aoi_height == 100)
 
-        # Save screenshot with AOI annotation if AOI is used
+        # Save screenshot with AOI annotation only when AOI is used (no raw non-annotated screenshot)
         if is_aoi_used:
             annotated_screenshot = utils.annotate_aoi_region(screenshot_np, aoi_x, aoi_y, aoi_width, aoi_height)
             utils.save_screenshot(annotated_screenshot, f"{func.__name__}_with_aoi", output_dir=self.execution_dir)
-        else:
-            utils.save_screenshot(screenshot_np, func.__name__, output_dir=self.execution_dir)
 
         # Pass AOI parameters to locate if provided
         if is_aoi_used:
@@ -46,11 +44,38 @@ def with_self_healing(func: Callable) -> Callable:
         else:
             results = self.strategy_manager.locate(element, index=index)
 
+        def _save_annotated_for_result(result):
+            """Save annotated screenshot when available (vision or XPath path)."""
+            annotated = getattr(result, "annotated_frame", None)
+            if annotated is not None:
+                name = f"{func.__name__}_image_detection_result"
+                utils.save_screenshot(
+                    annotated,
+                    name,
+                    output_dir=self.execution_dir,
+                    time_stamp=utils.get_timestamp(),
+                )
+                return
+            if not result.is_coordinates:
+                element_source = getattr(result.strategy, "element_source", None)
+                if element_source is not None and hasattr(element_source, "get_bbox_for_element"):
+                    bbox = element_source.get_bbox_for_element(result.value)
+                    if bbox is not None:
+                        name = f"{func.__name__}_element_detection_result"
+                        framed = utils.annotate(screenshot_np.copy(), [bbox])
+                        utils.save_screenshot(
+                            framed,
+                            name,
+                            output_dir=self.execution_dir,
+                            time_stamp=utils.get_timestamp(),
+                        )
+
         last_exception = None
         result_count = 0
         for result in results:
             result_count += 1
             try:
+                _save_annotated_for_result(result)
                 return func(self, element, located=result.value, *args, **kwargs)
             except Exception as e:
                 internal_logger.error(

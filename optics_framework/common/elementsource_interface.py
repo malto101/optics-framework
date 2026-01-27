@@ -64,6 +64,17 @@ class ElementSourceInterface(ABC):
         """
         return [None] * len(elements)
 
+    def get_bbox_for_element(
+        self, element: Any
+    ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """
+        Return bounding box for an already-located element in screenshot coordinates.
+
+        :param element: An already-located element (WebElement, Playwright handle, etc.).
+        :return: ((x1,y1), (x2,y2)) or None if not available.
+        """
+        return None
+
     @abstractmethod
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> list:
         """

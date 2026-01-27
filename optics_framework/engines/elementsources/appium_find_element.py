@@ -122,8 +122,25 @@ class AppiumFindElement(ElementSourceInterface):
     def get_element_bboxes(
         self, elements: List[str]
     ) -> List[Optional[Tuple[Tuple[int, int], Tuple[int, int]]]]:
-        """Return bounding boxes for each element using WebElement location and size."""
+        """
+        Return bounding boxes for each element using WebElement location and size.
+        Compatible with Android (UIAutomator2) and iOS (XCUITest); both expose
+        W3C location/size/rect on the WebElement.
+        """
         return utils.bboxes_from_webelements(self.locate, elements)
+
+    def get_bbox_for_element(
+        self, element: Any
+    ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """
+        Return bounding box for an already-located Appium WebElement.
+        Uses location/size or rect first (Android and iOS); falls back to
+        get_attribute("bounds") (Android) or get_attribute("rect") (iOS).
+        """
+        bbox = utils.bbox_from_webelement_like(element)
+        if bbox is not None:
+            return bbox
+        return utils.bbox_from_appium_attribute_fallback(element)
 
     def _assert_elements_one_pass(
         self, elements: List[str], found: dict, rule: str
