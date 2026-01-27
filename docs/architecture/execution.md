@@ -529,6 +529,7 @@ def register(self, instance: object) -> None:
 ```
 
 **Registration Rules:**
+
 - Only public methods (not starting with `_`)
 - Must be callable
 - Method name becomes the keyword identifier
@@ -655,6 +656,7 @@ def press_element(self, element: str):
 ```
 
 The registry works independently of Robot Framework, but both systems can coexist:
+
 - **Registry**: For internal test execution
 - **Robot Framework**: For Robot Framework test files
 
@@ -764,6 +766,7 @@ graph TB
 ```
 
 **Structure:**
+
 - **TestSuite**: Container for test cases (head pointer)
 - **TestCaseNode**: Individual test case with modules (linked list)
 - **ModuleNode**: Reusable module with keywords (linked list)
@@ -784,6 +787,7 @@ class Node(BaseModel):
 ```
 
 **Node Properties:**
+
 - **id**: Unique UUID for each node
 - **name**: Human-readable identifier
 - **state**: Current execution state (see State Enum)
@@ -835,6 +839,7 @@ class TestCaseNode(Node):
 ```
 
 **Methods:**
+
 - `add_module(module)`: Add module to test case
 - `remove_module(module_name)`: Remove module by name
 - `get_module(module_name)`: Get module by name
@@ -860,6 +865,7 @@ class ModuleNode(Node):
 ```
 
 **Methods:**
+
 - `add_keyword(keyword)`: Add keyword to module
 - `remove_keyword(keyword_name)`: Remove keyword by name
 - `get_keyword(keyword_name)`: Get keyword by name
@@ -902,6 +908,7 @@ class TestSuite(BaseModel):
 ```
 
 **Methods:**
+
 - `add_test_case(test_case)`: Add test case to suite
 - `remove_test_case(test_case_name)`: Remove test case by name
 - `get_test_case(test_case_name)`: Get test case by name
@@ -975,11 +982,13 @@ class ElementData(BaseModel):
 ```
 
 **Key Features:**
+
 - Multiple values per element (fallback support)
 - Automatic fallback resolution
 - Priority-based value selection
 
 **Methods:**
+
 - `add_element(name, value)`: Add value to element
 - `remove_element(name)`: Remove element
 - `get_element(name)`: Get all values for element
@@ -1023,6 +1032,7 @@ class ModuleData(BaseModel):
 ```
 
 **Methods:**
+
 - `add_module_definition(name, definition)`: Add module definition
 - `remove_module_definition(name)`: Remove module
 - `get_module_definition(name)`: Get module definition
@@ -1165,6 +1175,7 @@ Collect and format execution results.
 #### TreeResultPrinter
 
 Hierarchical result display:
+
 - Test case results
 - Module results
 - Keyword results

@@ -17,7 +17,7 @@ local -a _optics_subcommands=(
 )
 
 # Static or dynamic values
-local -a templates=("calender" "contact" "gmail_web" "youtube")
+local -a templates=("calendar" "clock" "contact" "gmail_web" "youtube")
 local -a runners=("test_runner" "pytest")
 local -a frameworks=("pytest" "robot")
 local -a drivers=("${(f)$(optics setup --list 2>/dev/null | awk '{print $1}' | grep -vE '^(Action|Available|Drivers:|Text)$')}")
@@ -94,7 +94,7 @@ _optics_completions() {
 
   local subcommands="list config dry_run init execute version generate setup serve completion"
 
-  local template_options="calender contact gmail_web youtube"
+  local template_options="calendar clock contact gmail_web youtube"
   local runner_options="test_runner pytest"
   local driver_options=$(optics setup --list 2>/dev/null | awk '{print $1}' | grep -vE '^(Action|Available|Drivers:|Text)$')
 

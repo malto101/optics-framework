@@ -2,6 +2,11 @@
 
 This document outlines the available keywords for the Optics Framework, which can be used in the `test_modules.csv` file to define test steps. Keywords are derived from the framework's Python API, with method names converted to a space-separated format (e.g., `press_element` becomes `Press Element`). Each keyword corresponds to a specific action, verification, or control flow operation. Below, each keyword includes detailed parameter explanations to guide their usage.
 
+### Keyword data sources
+
+- **Element-based keywords** (Press Element, Assert Elements, Type Text, Validate Element, etc.) use **element data** from element files (CSV with columns such as `element_name` / `element_id`, or YAML with an `elements` key). Element names in test steps refer to these definitions.
+- **Invoke API** uses **API definition data** from **API YAML files** (top-level `api` or `apis`). It does not use element files. You reference an API by the identifier `collection.api_name`.
+
 ## Action Keywords
 
 These keywords handle interactions with the application, such as clicking, swiping, and text input.
@@ -452,7 +457,7 @@ Captures a screenshot of the current screen.
 Capture Screenshot,screenshot_before_action
 ```
 
-### Capture Pagesource
+### Capture Page Source
 
 Captures the page source of the current screen.
 
@@ -465,7 +470,7 @@ Captures the page source of the current screen.
 **Example:**
 
 ```csv
-Capture Pagesource,get_source
+Capture Page Source,get_source
 ```
 
 ### Get Interactive Elements
@@ -598,39 +603,9 @@ None
 Get Driver Session Id
 ```
 
-### Initialise Setup
-
-Sets up the environment for the driver module. This method should be called before performing any application management operations.
-
-**Parameters:**
-
-None
-
-**Example:**
-
-```csv
-Initialise Setup
-```
-
 ## Flow Control Keywords
 
-These keywords handle control flow operations like loops, conditions, and data manipulation.
-
-### Execute Module
-
-Executes a module's keywords using the session's keyword_map. This is typically used internally but can be called explicitly.
-
-**Parameters:**
-
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `module_name` | Required | The name of the module to execute | - |
-
-**Example:**
-
-```csv
-Execute Module,login_module
-```
+These keywords handle control flow operations like loops, conditions, and data manipulation. Module execution is performed by the runner when it runs test-case steps; the Optics API does not expose user-facing "Initialise Setup" or "Execute Module" keywords.
 
 ### Run Loop
 
@@ -767,7 +742,25 @@ Date Evaluate,${tomorrow},04/25/2025,+1 day
 Date Evaluate,${next_week},2025-04-25,+7 days,%Y-%m-%d
 ```
 
-### Invoke Api
+### Add API
+
+Adds or updates API definitions in the current session by loading from a file path or a dictionary. Use this when not using the runner's auto-discovery (e.g. when driving the framework programmatically). The supplied data **replaces** the session's API data.
+
+**Parameters:**
+
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `api_data` | Required | Either a path to an API YAML file, or a dictionary with the same structure (top-level `api` key with `collections`, etc.) | - |
+
+**Example (file path):**
+
+```csv
+Add API,path/to/api.yaml
+```
+
+**Example (programmatic):** Pass a dict with an `api` key holding the collection/endpoint definitions. Relative paths are resolved against the project path when a string is given.
+
+### Invoke API
 
 Invokes an API call based on a definition from the session's API data.
 
@@ -780,7 +773,14 @@ Invokes an API call based on a definition from the session's API data.
 **Example:**
 
 ```csv
-Invoke Api,users.get_user
+Invoke API,users.get_user
 ```
 
-**Note:** API definitions must be configured in the session's API data before using this keyword.
+**Data source: API definition YAML**
+
+Invoke API does **not** use element files. It uses **API definition YAML files** only. The format is different from element CSV/YAML: definitions live under a top-level `api` (or `apis`) key, with `collections` → each collection has `base_url`, `global_headers`, and `apis` → each API has `endpoint`, `request` (e.g. `method`, `headers`, `body`), and optionally `expected_result`, `extract`, and so on.
+
+How API definitions reach the session:
+
+- **CLI/runner:** YAML files under the project that contain a top-level `api` or `apis` key are auto-discovered and loaded as API data.
+- **Programmatic:** The **Add API** keyword can load from a file path or a dict to set or replace session API data.

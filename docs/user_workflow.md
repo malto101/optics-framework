@@ -204,13 +204,13 @@ A Selenium-based sample that automates Gmail sign-in and account creation. It in
 To check for syntactical errors in your CSV files and configuration, run a dry run:
 
 ```bash
-optics dry_run ./youtube
+optics dry_run ./contact
 ```
 
 For a specific test case:
 
 ```bash
-optics dry_run ./youtube --test-case "Running youtube using text"
+optics dry_run ./contact
 ```
 
 This command simulates the test execution without interacting with the device, helping you catch issues early.
@@ -220,10 +220,9 @@ This command simulates the test execution without interacting with the device, h
 Once validated, execute your tests with:
 
 ```bash
-optics execute ./youtube
+optics execute ./contact
 ```
 
-- **./youtube**: Path to your project directory.
-- **--test-cases**: Path to the `test_cases.csv` file.
+- **./contact**: Path to your project directory. The runner discovers test cases, modules, and config from this folder.
 
 Output, including logs, will be saved in the `execution_output/` folder.

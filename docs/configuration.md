@@ -775,3 +775,7 @@ driver_sources:
 5. **Use Global Config for Common Settings**: Store frequently used settings in `~/.optics/global_config.yaml`
 6. **Leverage Configuration Priority**: Override global settings in project-specific configs when needed
 7. **Test Configuration Changes**: Verify configurations work correctly before running large test suites
+
+## See also
+
+For an example-oriented guide to using `config.yaml` (driver_sources, capabilities, and common settings), see the in-package [config_usage.md](../optics_framework/config_usage.md) in the repository.

@@ -60,6 +60,23 @@ optics_framework/
 
 *`my_test_project/` - Your specific project name (you choose this)*
 
+### Using Invoke API and API definition files
+
+Projects that use the **Invoke Api** keyword include **API definition YAML files**, which are a separate asset from element files. The **Invoke Api** keyword does not use `elements.csv` or element YAML; it uses API definition data only. Add an `api.yaml` (or other YAML files under the project) that contains a top-level `api` or `apis` key. The runner auto-discovers and loads any such YAML files under the project directory. Example layout when using API tests:
+
+```text
+my_test_project/
+├── config.yaml
+├── api.yaml
+├── modules/
+├── test_data/
+|   ├── elements.csv
+|   └── input_templates/
+└── test_cases/
+```
+
+The API YAML format is different from element files: it defines collections, base URLs, endpoints, request/response, and optional `extract` rules. See the **Invoke Api** and **Add Api** sections in [Keyword Usage](usage/keyword_usage.md), and sample `api.yaml` files
+
 ## :material-cog: Step 1: Configure Your Environment
 
 The `config.yaml` file tells the framework how to connect to your device and what tools to use for finding elements.
