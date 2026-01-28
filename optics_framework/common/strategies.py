@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import inspect
 import time
 import math
-from typing import List, Union, Tuple, Generator, Set, Optional, Any
+from typing import List, NamedTuple, Union, Tuple, Generator, Set, Optional, Any
 import numpy as np
 from optics_framework.common.base_factory import InstanceFallback
 from optics_framework.common.elementsource_interface import ElementSourceInterface
@@ -17,6 +17,12 @@ from optics_framework.common.error import OpticsError, Code
 TEXT_DETECTION_NOT_AVAILABLE_MSG = "Text detection is not available."
 
 
+class LocateValueWithFrame(NamedTuple):
+    """Result from vision strategies: coordinates (or value) plus optional annotated image."""
+    value: Union[Tuple[int, int], object]
+    annotated_frame: Optional[Any]
+
+
 class LocatorStrategy(ABC):
     """Abstract base class for element location strategies."""
 
@@ -26,12 +32,15 @@ class LocatorStrategy(ABC):
         pass
 
     @abstractmethod
-    def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int]]:
+    def locate(
+        self, element: str, index: int = 0
+    ) -> Optional[Union[object, Tuple[int, int], LocateValueWithFrame]]:
         """Locates an element and returns either an element object or coordinates (x, y).
 
         :param element: The element identifier (e.g., XPath, text, image path).
         :param index: The index of the element if multiple matches are found.
-        :return: Either an element object or a tuple of (x, y) coordinates.
+        :return: Either an element object, a tuple of (x, y) coordinates,
+            a LocateValueWithFrame (vision strategies), or None if not found.
         """
         pass
 
@@ -135,7 +144,7 @@ class XPathStrategy(LocatorStrategy):
     def element_source(self) -> ElementSourceInterface:
         return self._element_source
 
-    def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int]]:
+    def locate(self, element: str, index: int = 0) -> Optional[Union[object, Tuple[int, int]]]:
         return self.element_source.locate(element, index)
 
     def assert_elements(
@@ -159,7 +168,7 @@ class TextElementStrategy(LocatorStrategy):
     def element_source(self) -> ElementSourceInterface:
         return self._element_source
 
-    def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int]]:
+    def locate(self, element: str, index: int = 0) -> Optional[Union[object, Tuple[int, int]]]:
         return self.element_source.locate(element, index)
 
     def assert_elements(
@@ -185,7 +194,7 @@ class TextDetectionStrategy(LocatorStrategy):
     def element_source(self) -> ElementSourceInterface:
         return self._element_source
 
-    def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int], Tuple]:
+    def locate(self, element: str, index: int = 0) -> Optional[LocateValueWithFrame]:
         if self.text_detection is None:
             raise OpticsError(Code.E0201, message=TEXT_DETECTION_NOT_AVAILABLE_MSG)
         screenshot = self.element_source.capture()
@@ -200,9 +209,9 @@ class TextDetectionStrategy(LocatorStrategy):
         annotated_frame = None
         if bbox is not None and len(bbox) == 2 and bbox[0] is not None and bbox[1] is not None:
             annotated_frame = utils.annotate(screenshot.copy(), [bbox])
-        return (coor, annotated_frame)
+        return LocateValueWithFrame(coor, annotated_frame)
 
-    def locate_with_aoi(self, element: str, aoi_x: float, aoi_y: float, aoi_width: float, aoi_height: float, index: float=0) -> Union[object, Tuple[int, int]]:
+    def locate_with_aoi(self, element: str, aoi_x: float, aoi_y: float, aoi_width: float, aoi_height: float, index: float = 0) -> Optional[LocateValueWithFrame]:
         """
         Locate text element within a specified Area of Interest (AOI).
 
@@ -247,7 +256,7 @@ class TextDetectionStrategy(LocatorStrategy):
                 adjusted_tl = utils.adjust_coordinates_for_aoi(bbox[0], aoi_bounds)
                 adjusted_br = utils.adjust_coordinates_for_aoi(bbox[1], aoi_bounds)
                 annotated_frame = utils.annotate(full_screenshot.copy(), [(adjusted_tl, adjusted_br)])
-            return (adjusted_coor, annotated_frame)
+            return LocateValueWithFrame(adjusted_coor, annotated_frame)
         except ValueError as e:
             internal_logger.debug(f"Coordinate adjustment failed for TextDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Coordinate adjustment failed: {e}")
@@ -306,7 +315,7 @@ class ImageDetectionStrategy(LocatorStrategy):
     def element_source(self) -> ElementSourceInterface:
         return self._element_source
 
-    def locate(self, element: str, index: int = 0) -> Union[object, Tuple[int, int], Tuple]:
+    def locate(self, element: str, index: int = 0) -> Optional[LocateValueWithFrame]:
         screenshot = self.element_source.capture()
         found = self.image_detection.find_element(screenshot, element, index)
         if found is None:
@@ -317,9 +326,9 @@ class ImageDetectionStrategy(LocatorStrategy):
         annotated_frame = None
         if bbox is not None and len(bbox) == 2 and bbox[0] is not None and bbox[1] is not None:
             annotated_frame = utils.annotate(screenshot.copy(), [bbox])
-        return (centre, annotated_frame)
+        return LocateValueWithFrame(centre, annotated_frame)
 
-    def locate_with_aoi(self, element: str, aoi_x: float, aoi_y: float, aoi_width: float, aoi_height: float, index: int = 0) -> Union[object, Tuple[int, int], Tuple]:
+    def locate_with_aoi(self, element: str, aoi_x: float, aoi_y: float, aoi_width: float, aoi_height: float, index: int = 0) -> Optional[LocateValueWithFrame]:
         """
         Locate image element within a specified Area of Interest (AOI).
 
@@ -361,7 +370,7 @@ class ImageDetectionStrategy(LocatorStrategy):
                 adjusted_tl = utils.adjust_coordinates_for_aoi(bbox[0], aoi_bounds)
                 adjusted_br = utils.adjust_coordinates_for_aoi(bbox[1], aoi_bounds)
                 annotated_frame = utils.annotate(full_screenshot.copy(), [(adjusted_tl, adjusted_br)])
-            return (adjusted_centre, annotated_frame)
+            return LocateValueWithFrame(adjusted_centre, annotated_frame)
         except ValueError as e:
             internal_logger.debug(f"Coordinate adjustment failed for ImageDetectionStrategy: {e}")
             raise OpticsError(Code.E0205, message=f"Coordinate adjustment failed: {e}")
@@ -582,11 +591,10 @@ class StrategyManager:
                 result = strategy.locate(element, index=index)
             if result is None:
                 return None
-            # Unpack (value, annotated_frame) when vision strategies return it
-            if isinstance(result, tuple) and len(result) == 2:
+            if isinstance(result, LocateValueWithFrame):
+                value, annotated_frame = result.value, result.annotated_frame
+            elif isinstance(result, tuple) and len(result) == 2 and (result[1] is None or hasattr(result[1], "shape")):
                 value, annotated_frame = result[0], result[1]
-                if annotated_frame is None or not hasattr(annotated_frame, "shape"):
-                    annotated_frame = None
             else:
                 value, annotated_frame = result, None
             execution_tracer.log_attempt(strategy, element, "success")

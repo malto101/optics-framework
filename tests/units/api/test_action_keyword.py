@@ -21,9 +21,6 @@ class MockOpticsBuilder(OpticsBuilder):
         self.session_config = MagicMock()
         self.session_config.execution_output_path = self.temp_dir
 
-        # Add dummy event_sdk attribute
-        self.event_sdk = MagicMock()
-
     def get_driver(self):
         return self.mock_driver
 

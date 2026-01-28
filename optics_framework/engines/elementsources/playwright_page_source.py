@@ -1017,12 +1017,8 @@ class PlaywrightPageSource(ElementSourceInterface):
         if isinstance(elements, str):
             elements = [elements]
 
-        # Ensure driver is initialized before entering the loop
-        try:
-            page = self._require_page()
-        except OpticsError:
-            # If driver is not initialized, raise so callers do not treat it as success
-            raise
+        # Ensure driver is initialized before entering the loop (OpticsError propagates if not)
+        page = self._require_page()
 
         start_time = time.time()
 

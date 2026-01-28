@@ -1,4 +1,3 @@
-import os
 import shutil
 import tempfile
 import uuid
@@ -13,6 +12,7 @@ from optics_framework.common.models import TestCaseNode, ElementData, ApiData, M
 from optics_framework.common.eventSDK import EventSDK
 from optics_framework.common.error import OpticsError, Code
 from optics_framework.common.events import get_event_manager_registry
+from optics_framework.common.logging_config import internal_logger
 
 
 def _to_dict_list(configs: list) -> list:
@@ -115,6 +115,7 @@ class Session:
         self.templates = templates
         self.request_template_overrides: Dict[str, str] = {}
         self.inline_templates: Dict[str, str] = {}
+        self._inline_templates_dir: str = tempfile.mkdtemp(prefix="optics_session_")
         self._template_resolver = SessionTemplateResolver(self)
 
         enabled_driver_configs = _get_enabled_config_list(self.config, "driver_sources")
@@ -167,10 +168,11 @@ class SessionManager(SessionHandler):
             if session.driver:
                 session.driver.terminate()
             session.inline_templates.clear()
-        base_dir = os.path.join(tempfile.gettempdir(), f"optics_session_{session_id}")
-        try:
-            shutil.rmtree(base_dir, ignore_errors=True)
-        except OSError:
-            pass
+            base_dir = getattr(session, "_inline_templates_dir", None)
+            if base_dir:
+                try:
+                    shutil.rmtree(base_dir)
+                except OSError as e:
+                    internal_logger.warning("Failed to remove inline templates directory %s: %s", base_dir, e)
         cleanup_junit(session_id)
         get_event_manager_registry().remove_session(session_id)

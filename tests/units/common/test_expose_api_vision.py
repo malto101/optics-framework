@@ -116,20 +116,38 @@ def test_upload_template_request_model():
     assert body.image_base64 == "abc123"
 
 
+def test_safe_template_filename_name_png_for_safe_names():
+    """_safe_template_filename yields name.png-style stems for safe names; rejects path-like ones."""
+    import pytest
+    from optics_framework.common.expose_api import _safe_template_filename
+
+    assert _safe_template_filename("my_btn") == "my_btn"
+    assert _safe_template_filename("btn1") == "btn1"
+    assert _safe_template_filename("x-y.z") == "x-y.z"
+    assert _safe_template_filename("my btn") == "my_btn"
+    # Path-like or reserved -> reject (ValueError)
+    with pytest.raises(ValueError, match="path segments"):
+        _safe_template_filename("../../../etc/passwd")
+    with pytest.raises(ValueError, match="path segments"):
+        _safe_template_filename("a/b")
+    with pytest.raises(ValueError, match="path segments"):
+        _safe_template_filename("..")
+
+
 def test_terminate_cleans_inline_templates_dir():
-    """terminate_session removes session inline-templates temp dir."""
+    """terminate_session removes the session's inline-templates dir (server-created, not from user input)."""
     from optics_framework.common.session_manager import SessionManager
 
-    # Use a dedicated temp dir for this test so we control the path
     session_id = "test-session-terminate-cleanup"
-    session_dir = os.path.join(tempfile.gettempdir(), f"optics_session_{session_id}")
-    os.makedirs(session_dir, exist_ok=True)
+    # Session's _inline_templates_dir is created by the server (mkdtemp); simulate it for this test
+    session_dir = tempfile.mkdtemp(prefix="optics_session_")
     marker = os.path.join(session_dir, "uploaded.png")
     with open(marker, "wb") as f:
         f.write(b"x")
     assert os.path.isdir(session_dir)
 
     manager = SessionManager()
-    # We only need to run the cleanup logic; session may not exist
+    session = type("Session", (), {"driver": None, "inline_templates": {}, "_inline_templates_dir": session_dir})()
+    manager.sessions[session_id] = session
     manager.terminate_session(session_id)
     assert not os.path.isdir(session_dir)

@@ -1,7 +1,7 @@
 from functools import wraps
 import time
 import json
-from typing import Callable, Optional, Any
+from typing import Callable, Optional, Any, Tuple
 from optics_framework.common.logging_config import internal_logger, execution_logger
 from optics_framework.common.optics_builder import OpticsBuilder
 from optics_framework.common.strategies import StrategyManager
@@ -10,84 +10,130 @@ from optics_framework.common import utils
 from optics_framework.common.error import OpticsError, Code
 from .verifier import Verifier
 
+
+def _parse_aoi_param(param: Any, default_value: float) -> float:
+    if param is None or str(param).strip() in ('', 'None', 'none'):
+        return default_value
+    return float(param)
+
+
+def _parse_aoi_from_kwargs(kwargs: dict) -> Tuple[float, float, float, float, int, bool]:
+    aoi_x = _parse_aoi_param(kwargs.pop('aoi_x', '0'), 0)
+    aoi_y = _parse_aoi_param(kwargs.pop('aoi_y', '0'), 0)
+    aoi_width = _parse_aoi_param(kwargs.pop('aoi_width', '100'), 100)
+    aoi_height = _parse_aoi_param(kwargs.pop('aoi_height', '100'), 100)
+    index = int(kwargs.pop('index', 0))
+    is_aoi_used = not (aoi_x == 0 and aoi_y == 0 and aoi_width == 100 and aoi_height == 100)
+    return aoi_x, aoi_y, aoi_width, aoi_height, index, is_aoi_used
+
+
+def _maybe_save_aoi_screenshot(
+    screenshot_np: Any,
+    aoi_x: float, aoi_y: float, aoi_width: float, aoi_height: float,
+    execution_dir: str,
+    func_name: str,
+) -> None:
+    annotated = utils.annotate_aoi_region(screenshot_np, aoi_x, aoi_y, aoi_width, aoi_height)
+    utils.save_screenshot(annotated, f"{func_name}_with_aoi", output_dir=execution_dir)
+
+
+def _locate_element(
+    strategy_manager: StrategyManager,
+    element: Any,
+    aoi_x: float, aoi_y: float, aoi_width: float, aoi_height: float,
+    index: int,
+    is_aoi_used: bool,
+):
+    if is_aoi_used:
+        return strategy_manager.locate(element, aoi_x, aoi_y, aoi_width, aoi_height, index=index)
+    return strategy_manager.locate(element, index=index)
+
+
+def _save_annotated_for_result(
+    result: Any,
+    screenshot_np: Any,
+    execution_dir: str,
+    func_name: str,
+) -> None:
+    annotated = getattr(result, "annotated_frame", None)
+    if annotated is not None:
+        utils.save_screenshot(
+            annotated,
+            f"{func_name}_image_detection_result",
+            output_dir=execution_dir,
+            time_stamp=utils.get_timestamp(),
+        )
+        return
+    if result.is_coordinates:
+        return
+    element_source = getattr(result.strategy, "element_source", None)
+    if element_source is None or not hasattr(element_source, "get_bbox_for_element"):
+        return
+    bbox = element_source.get_bbox_for_element(result.value)
+    if bbox is None:
+        return
+    framed = utils.annotate(screenshot_np.copy(), [bbox])
+    utils.save_screenshot(
+        framed,
+        f"{func_name}_element_detection_result",
+        output_dir=execution_dir,
+        time_stamp=utils.get_timestamp(),
+    )
+
+
+def _try_results_until_success(
+    results,
+    func: Callable,
+    self: Any,
+    element: Any,
+    args: tuple,
+    kwargs: dict,
+    screenshot_np: Any,
+    execution_dir: str,
+    func_name: str,
+):
+    last_exception = None
+    result_count = 0
+    for result in results:
+        result_count += 1
+        _save_annotated_for_result(result, screenshot_np, execution_dir, func_name)
+        try:
+            return func(self, element, located=result.value, *args, **kwargs)
+        except Exception as e:
+            internal_logger.error(
+                f"Action '{func_name}' failed with {result.strategy.__class__.__name__}: {e}")
+            last_exception = e
+    if result_count == 0:
+        raise OpticsError(Code.E0201, message=f"No valid strategies found for '{element}' in '{func_name}'")
+    if last_exception:
+        raise OpticsError(
+            Code.X0201,
+            message=f"All strategies failed for '{element}' in '{func_name}': {last_exception}",
+            cause=last_exception,
+        )
+    raise OpticsError(Code.E0801, message=f"Unexpected failure: No results or exceptions for '{element}' in '{func_name}'")
+
+
 # Action Executor Decorator
 def with_self_healing(func: Callable) -> Callable:
     @wraps(func)
     def wrapper(self, element, *args, **kwargs):
         screenshot_np = self.strategy_manager.capture_screenshot()
-
-        # Extract AOI parameters from kwargs if present and convert to float
-        def parse_aoi_param(param, default_value):
-            if param is None or str(param).strip() in ('', 'None', 'none'):
-                return default_value
-            return float(param)
-
-        aoi_x = parse_aoi_param(kwargs.pop('aoi_x', '0'), 0)
-        aoi_y = parse_aoi_param(kwargs.pop('aoi_y', '0'), 0)
-        aoi_width = parse_aoi_param(kwargs.pop('aoi_width', '100'), 100)
-        aoi_height = parse_aoi_param(kwargs.pop('aoi_height', '100'), 100)
-
-        # Extract index parameter from kwargs if present
-        index = int(kwargs.pop('index', 0))
-
-        # Check if AOI is being used (i.e., AOI parameters after parsing are not the default float values: 0, 0, 100, 100)
-        is_aoi_used = not (aoi_x == 0 and aoi_y == 0 and aoi_width == 100 and aoi_height == 100)
-
-        # Save screenshot with AOI annotation only when AOI is used (no raw non-annotated screenshot)
+        aoi_x, aoi_y, aoi_width, aoi_height, index, is_aoi_used = _parse_aoi_from_kwargs(kwargs)
         if is_aoi_used:
-            annotated_screenshot = utils.annotate_aoi_region(screenshot_np, aoi_x, aoi_y, aoi_width, aoi_height)
-            utils.save_screenshot(annotated_screenshot, f"{func.__name__}_with_aoi", output_dir=self.execution_dir)
-
-        # Pass AOI parameters to locate if provided
-        if is_aoi_used:
-            results = self.strategy_manager.locate(element, aoi_x, aoi_y, aoi_width, aoi_height, index=index)
-        else:
-            results = self.strategy_manager.locate(element, index=index)
-
-        def _save_annotated_for_result(result):
-            """Save annotated screenshot when available (vision or XPath path)."""
-            annotated = getattr(result, "annotated_frame", None)
-            if annotated is not None:
-                name = f"{func.__name__}_image_detection_result"
-                utils.save_screenshot(
-                    annotated,
-                    name,
-                    output_dir=self.execution_dir,
-                    time_stamp=utils.get_timestamp(),
-                )
-                return
-            if not result.is_coordinates:
-                element_source = getattr(result.strategy, "element_source", None)
-                if element_source is not None and hasattr(element_source, "get_bbox_for_element"):
-                    bbox = element_source.get_bbox_for_element(result.value)
-                    if bbox is not None:
-                        name = f"{func.__name__}_element_detection_result"
-                        framed = utils.annotate(screenshot_np.copy(), [bbox])
-                        utils.save_screenshot(
-                            framed,
-                            name,
-                            output_dir=self.execution_dir,
-                            time_stamp=utils.get_timestamp(),
-                        )
-
-        last_exception = None
-        result_count = 0
-        for result in results:
-            result_count += 1
-            try:
-                _save_annotated_for_result(result)
-                return func(self, element, located=result.value, *args, **kwargs)
-            except Exception as e:
-                internal_logger.error(
-                    f"Action '{func.__name__}' failed with {result.strategy.__class__.__name__}: {e}")
-                last_exception = e
-
-        if result_count == 0:
-            # No strategies yielded a result
-            raise OpticsError(Code.E0201, message=f"No valid strategies found for '{element}' in '{func.__name__}'")
-        if last_exception:
-            raise OpticsError(Code.X0201, message=f"All strategies failed for '{element}' in '{func.__name__}': {last_exception}", cause=last_exception)
-        raise OpticsError(Code.E0801, message=f"Unexpected failure: No results or exceptions for '{element}' in '{func.__name__}'")
+            _maybe_save_aoi_screenshot(
+                screenshot_np, aoi_x, aoi_y, aoi_width, aoi_height,
+                self.execution_dir, func.__name__,
+            )
+        utils.save_screenshot(screenshot_np, f"pre-{func.__name__}", output_dir=self.execution_dir)
+        results = _locate_element(
+            self.strategy_manager, element,
+            aoi_x, aoi_y, aoi_width, aoi_height, index, is_aoi_used,
+        )
+        return _try_results_until_success(
+            results, func, self, element, args, kwargs,
+            screenshot_np, self.execution_dir, func.__name__,
+        )
     return wrapper
 
 

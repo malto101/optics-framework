@@ -603,7 +603,7 @@ def bbox_from_appium_attribute_fallback(element: Any) -> Optional[Tuple[Tuple[in
                 w = int(parsed.get("width", 0))
                 h = int(parsed.get("height", 0))
                 return ((x, y), (x + w, y + h))
-    except (TypeError, ValueError, AttributeError, json.JSONDecodeError):
+    except (TypeError, ValueError, AttributeError):
         pass
     return None
 

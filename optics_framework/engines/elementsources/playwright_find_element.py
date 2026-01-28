@@ -229,12 +229,8 @@ class PlaywrightFindElement(ElementSourceInterface):
                 message="Invalid rule. Use 'any' or 'all'",
             )
 
-        # Check if driver is initialized before entering the loop
-        try:
-            self._require_page()
-        except OpticsError:
-            # If driver is not initialized, return False immediately instead of looping
-            return False, utils.get_timestamp()
+        # Ensure driver is initialized before entering the loop (OpticsError propagates if not)
+        self._require_page()
 
         start_time = time.time()
         found = dict.fromkeys(elements, False)
@@ -256,4 +252,10 @@ class PlaywrightFindElement(ElementSourceInterface):
                     message=f"Error during element assertion: {e}",
                 ) from e
 
-        return False, utils.get_timestamp()
+        internal_logger.warning(
+            "[PlaywrightFindElement] Timeout reached. rule=%s elements=%s",
+            rule, elements
+        )
+        raise TimeoutError(
+            f"Timeout reached: Elements not found based on rule '{rule}': {elements}"
+        )

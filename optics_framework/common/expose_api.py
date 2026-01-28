@@ -1,6 +1,8 @@
 import base64
+import binascii
 import json
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -10,13 +12,12 @@ import pkgutil
 import asyncio
 import warnings
 import hashlib
-import yaml
 from itertools import product
 from typing import Optional, Dict, Any, List, Union, cast, Callable, Tuple, NamedTuple
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import status
-from pydantic import BaseModel, ValidationError as PydanticValidationError
+from pydantic import BaseModel, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from optics_framework.common.session_manager import SessionManager, Session
 from optics_framework.common.models import ApiData
@@ -39,6 +40,67 @@ session_manager = SessionManager()
 # Store last workspace hash per session for change detection
 workspace_hashes: Dict[str, str] = {}
 
+# --- API / HTTP messages ---
+SESSION_NOT_FOUND = "Session not found"
+MSG_ONLY_KEYWORD_MODE_SUPPORTED = "Only keyword mode with a keyword is supported"
+MSG_INVALID_API_DATA = "Invalid api_data:"
+MSG_SESSION_CREATION_FAILED = "Session creation failed:"
+MSG_EXECUTION_FAILED = "Execution failed:"
+MSG_SESSION_TERMINATION_FAILED = "Session termination failed:"
+MSG_INVALID_BASE64_IMAGE = "Invalid base64 image data:"
+
+# --- Execution / request ---
+MODE_KEYWORD = "keyword"
+RUNNER_TYPE_KEYWORD = "keyword"
+STATUS_RUNNING = "RUNNING"
+STATUS_SUCCESS = "SUCCESS"
+STATUS_FAIL = "FAIL"
+STATUS_HEARTBEAT = "HEARTBEAT"
+STATUS_ERROR = "ERROR"
+STATUS_CANCELLED = "CANCELLED"
+KEYWORD_LAUNCH_APP = "launch_app"
+KEYWORD_CLOSE_AND_TERMINATE_APP = "close_and_terminate_app"
+KEY_RESULT = "result"
+EXECUTION_ID_HEARTBEAT = "heartbeat"
+EXECUTION_ID_UNKNOWN = "unknown"
+
+# --- Config / dependency keys ---
+SOURCE_APPIUM = "appium"
+KEY_DRIVER_SOURCES = "driver_sources"
+KEY_ELEMENTS_SOURCES = "elements_sources"
+KEY_TEXT_DETECTION = "text_detection"
+KEY_IMAGE_DETECTION = "image_detection"
+KEY_API = "api"
+KEY_ENABLED = "enabled"
+KEY_URL = "url"
+KEY_CAPABILITIES = "capabilities"
+
+# --- Response / workspace keys ---
+KEY_SCREENSHOT = "screenshot"
+KEY_ELEMENTS = "elements"
+KEY_SOURCE = "source"
+KEY_SCREENSHOT_FAILED = "screenshotFailed"
+KEY_TYPE = "type"
+KEY_MESSAGE = "message"
+KEY_TIMESTAMP = "timestamp"
+KEY_DATA = "data"
+STATUS_CREATED = "created"
+STATUS_STARTED = "started"
+STATUS_TERMINATED = "terminated"
+STATUS_OK = "ok"
+WORKSPACE_TYPE_HEARTBEAT = "heartbeat"
+WORKSPACE_TYPE_ERROR = "error"
+
+# --- Other ---
+HEALTH_STATUS_RUNNING = "Optics Framework API is running"
+LOG_LEVEL_DEBUG = "DEBUG"
+TEMPLATE_EXT_PNG = ".png"
+TEMP_DIR_PREFIX = "optics_request_"
+PKG_OPTICS_API = "optics_framework.api"
+PARAM_FILTER_CONFIG = "filter_config"
+DATA_URL_PREFIX = "data:"
+BASE64_SEPARATOR = ";base64,"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -46,8 +108,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-SESSION_NOT_FOUND = "Session not found"
 
 
 class AppiumUpdateRequest(BaseModel):
@@ -90,7 +150,7 @@ class SessionResponse(BaseModel):
 
     session_id: str
     driver_id: Optional[str] = None
-    status: str = "created"
+    status: str = STATUS_CREATED
 
 
 class ExecutionResponse(BaseModel):
@@ -99,7 +159,7 @@ class ExecutionResponse(BaseModel):
     """
 
     execution_id: str
-    status: str = "started"
+    status: str = STATUS_STARTED
     data: Optional[Dict[str, Any]] = None
 
 
@@ -108,7 +168,7 @@ class TerminationResponse(BaseModel):
     Response model for session termination.
     """
 
-    status: str = "terminated"
+    status: str = STATUS_TERMINATED
 
 
 class ExecutionEvent(BaseModel):
@@ -159,7 +219,7 @@ def _make_dependency_entry(name: str, cfg: Any, top_level_url: Optional[str] = N
     """
     # Default values
     enabled = True
-    url: Optional[str] = top_level_url if name == "appium" else None
+    url: Optional[str] = top_level_url if name == SOURCE_APPIUM else None
     capabilities: Dict[str, Any] = top_level_capabilities or {}
 
     if cfg is None:
@@ -168,9 +228,9 @@ def _make_dependency_entry(name: str, cfg: Any, top_level_url: Optional[str] = N
     elif isinstance(cfg, bool):
         enabled = cfg
     elif isinstance(cfg, dict):
-        enabled = cfg.get("enabled", True)
-        url = cfg.get("url") or (top_level_url if name == "appium" else None)
-        capabilities = cast(Dict[str, Any], cfg.get("capabilities")) if isinstance(cfg.get("capabilities"), dict) else (top_level_capabilities or {})
+        enabled = cfg.get(KEY_ENABLED, True)
+        url = cfg.get(KEY_URL) or (top_level_url if name == SOURCE_APPIUM else None)
+        capabilities = cast(Dict[str, Any], cfg.get(KEY_CAPABILITIES)) if isinstance(cfg.get(KEY_CAPABILITIES), dict) else (top_level_capabilities or {})
     else:
         # Unknown scalar -> keep enabled True and defaults
         pass
@@ -205,9 +265,9 @@ class SessionConfig(BaseModel):
         - For 'appium' string entries, prefer top-level appium_url/appium_config when present.
         """
         if isinstance(item, str):
-            if item == "appium":
+            if item == SOURCE_APPIUM:
                 # prefer top-level appium settings when provided
-                return {"appium": DependencyConfig(enabled=True, url=top_level_url, capabilities=top_level_capabilities or {})}
+                return {SOURCE_APPIUM: DependencyConfig(enabled=True, url=top_level_url, capabilities=top_level_capabilities or {})}
             return _make_dependency_entry(item, None, top_level_url=top_level_url, top_level_capabilities=top_level_capabilities)
 
         if isinstance(item, dict):
@@ -229,37 +289,27 @@ class SessionConfig(BaseModel):
         text = [self._normalize_item(i) for i in (self.text_detection or [])]
         image = [self._normalize_item(i) for i in (self.image_detection or [])]
         return {
-            "driver_sources": driver,
-            "elements_sources": elements,
-            "text_detection": text,
-            "image_detection": image,
+            KEY_DRIVER_SOURCES: driver,
+            KEY_ELEMENTS_SOURCES: elements,
+            KEY_TEXT_DETECTION: text,
+            KEY_IMAGE_DETECTION: image,
         }
 
 
-def _parse_api_data_to_model(
-    api_data: Union[str, Dict[str, Any]], project_path: Optional[str] = None
-) -> ApiData:
+def _parse_api_data_to_model(api_data: Dict[str, Any]) -> ApiData:
     """
-    Parse api_data (path or dict) into ApiData. Used at session creation and for
-    the add-session-api endpoint. Matches Optics.add_api semantics.
+    Parse api_data (inline API definition dict) into ApiData. Used at session
+    creation and for the add-session-api endpoint. Does not accept file paths;
+    callers must pass the parsed API definition to avoid path traversal from
+    user-controlled input.
     """
-    if isinstance(api_data, str):
-        path = api_data
-        if not os.path.isabs(path) and project_path:
-            path = os.path.join(project_path, path)
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"API YAML file not found: {path}")
-        with open(path, "r", encoding="utf-8") as f:
-            try:
-                data = yaml.safe_load(f)
-            except yaml.YAMLError as e:
-                raise ValueError(f"Failed to parse API YAML file: {e}") from e
-        content = data.get("api", data)
-    elif isinstance(api_data, dict):
-        content = api_data.get("api", api_data)
-    else:
-        raise ValueError("api_data must be a file path or a dictionary")
-    return ApiData(**content)
+    if not isinstance(api_data, dict):
+        raise ValueError("api_data must be a dictionary (inline API definition)")
+    content = api_data.get(KEY_API, api_data)
+    try:
+        return ApiData(**content)
+    except ValidationError as e:
+        raise ValueError(str(e)) from e
 
 
 def _get_keyword_parameters(sig: inspect.Signature) -> List[KeywordParameter]:
@@ -317,7 +367,7 @@ def discover_keywords() -> List[KeywordInfo]:
     Discover all public methods in optics_framework.api.* classes that are likely to be used as keywords.
     Returns a list of KeywordInfo objects.
     """
-    api_pkg = "optics_framework.api"
+    api_pkg = PKG_OPTICS_API
     keywords = []
     api_path = __import__(api_pkg, fromlist=[""]).__path__[0]
     for _, modname, ispkg in pkgutil.iter_modules([api_path]):
@@ -333,7 +383,7 @@ async def health_check():
     Health check endpoint for Optics Framework API.
     Returns API status and version.
     """
-    return HealthCheckResponse(status="Optics Framework API is running", version=VERSION)
+    return HealthCheckResponse(status=HEALTH_STATUS_RUNNING, version=VERSION)
 
 @app.post("/v1/sessions/start", response_model=SessionResponse)
 async def create_session(config: SessionConfig):
@@ -363,10 +413,10 @@ async def create_session(config: SessionConfig):
 
         # Normalize incoming session config (supports deprecated string lists and new dict format)
         normalized = config.normalize_sources()
-        driver_sources = normalized.get("driver_sources", [])
-        elements_sources = normalized.get("elements_sources", [])
-        text_detection = normalized.get("text_detection", [])
-        image_detection = normalized.get("image_detection", [])
+        driver_sources = normalized.get(KEY_DRIVER_SOURCES, [])
+        elements_sources = normalized.get(KEY_ELEMENTS_SOURCES, [])
+        text_detection = normalized.get(KEY_TEXT_DETECTION, [])
+        image_detection = normalized.get(KEY_IMAGE_DETECTION, [])
 
         session_config = Config(
             driver_sources=driver_sources,
@@ -374,7 +424,7 @@ async def create_session(config: SessionConfig):
             text_detection=text_detection,
             image_detection=image_detection,
             project_path=config.project_path,
-            log_level="DEBUG"
+            log_level=LOG_LEVEL_DEBUG
         )
         templates = (
             discover_templates(config.project_path) if config.project_path else None
@@ -382,11 +432,11 @@ async def create_session(config: SessionConfig):
         apis: Optional[ApiData] = None
         if config.api_data is not None:
             try:
-                apis = _parse_api_data_to_model(config.api_data, project_path=None)
-            except (ValueError, PydanticValidationError) as e:
+                apis = _parse_api_data_to_model(config.api_data)
+            except ValueError as e:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid api_data: {e}",
+                    detail=f"{MSG_INVALID_API_DATA} {e}",
                 ) from e
         session_id = session_manager.create_session(
             session_config,
@@ -404,20 +454,20 @@ async def create_session(config: SessionConfig):
         )
 
         launch_request = ExecuteRequest(
-            mode="keyword",
-            keyword="launch_app",
+            mode=MODE_KEYWORD,
+            keyword=KEYWORD_LAUNCH_APP,
             params=[]
         )
         driver_session = await execute_keyword(session_id, launch_request)
         return SessionResponse(
             session_id=session_id,
-            driver_id=(driver_session.data or {}).get("result")
+            driver_id=(driver_session.data or {}).get(KEY_RESULT)
         )
     except Exception as e:
         internal_logger.error(f"Failed to create session: {e}")
         if isinstance(e, OpticsError):
             raise HTTPException(status_code=e.status_code, detail=e.to_payload(include_status=True)) from e
-        raise HTTPException(status_code=500, detail=f"Session creation failed: {e}") from e
+        raise HTTPException(status_code=500, detail=f"{MSG_SESSION_CREATION_FAILED} {e}") from e
 
 
 def _normalize_param_value(name: str, val: Union[str, List[str]], is_list_param: bool = False) -> List[str]:
@@ -507,10 +557,10 @@ def _keyword_execution_params(session_id: str, keyword: str, param_list: List[st
     """Build ExecutionParams for a single keyword run."""
     return ExecutionParams(
         session_id=session_id,
-        mode="keyword",
+        mode=MODE_KEYWORD,
         keyword=keyword,
         params=param_list,
-        runner_type="keyword",
+        runner_type=RUNNER_TYPE_KEYWORD,
         use_printer=False,
     )
 
@@ -523,11 +573,33 @@ def _should_reraise(e: BaseException) -> bool:
 def _decode_template_base64(value: str) -> bytes:
     """Decode base64 image bytes; supports raw base64 or data URL (data:...;base64,...)."""
     s = value.strip()
-    if s.startswith("data:"):
-        idx = s.find(";base64,")
+    if s.startswith(DATA_URL_PREFIX):
+        idx = s.find(BASE64_SEPARATOR)
         if idx != -1:
-            s = s[idx + 8:]
+            s = s[idx + len(BASE64_SEPARATOR):]
     return base64.b64decode(s)
+
+
+def _write_bytes_to_path(path: str, data: bytes) -> None:
+    """Write bytes to a file (sync). Use via asyncio.to_thread in async code."""
+    with open(path, "wb") as f:
+        f.write(data)
+
+
+def _safe_template_filename(name: str) -> str:
+    """
+    Return a safe filename stem for a template from its logical name.
+    Uses name when it contains only safe chars [a-zA-Z0-9_.-] and no path-like content.
+    Raises ValueError for path-like or otherwise invalid names (we do not allow them).
+    """
+    if "/" in name or "\\" in name or ".." in name:
+        raise ValueError("Template name must not contain path segments (/, \\, ..)")
+    stem = re.sub(r"[^a-zA-Z0-9_.-]", "_", name).strip("._")
+    if not stem or stem in (".", ".."):
+        raise ValueError("Template name is invalid or reserved")
+    if len(stem) > 200:
+        raise ValueError("Template name is too long")
+    return stem
 
 
 def _build_named_param_context(
@@ -685,6 +757,44 @@ async def _execute_keyword_with_fallback(
     return await _try_combos_positional(engine, session_id, keyword, normalized_param_lists)
 
 
+async def _setup_request_template_overrides(
+    session: Session, template_images: Optional[Dict[str, str]]
+) -> List[str]:
+    """Write template images to a temp dir and update session.request_template_overrides. Returns temp dirs for cleanup."""
+    if not template_images:
+        return []
+    temp_dir = tempfile.mkdtemp(prefix=TEMP_DIR_PREFIX)
+    for name, b64_value in template_images.items():
+        try:
+            safe_stem = _safe_template_filename(name)
+        except ValueError as e:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        try:
+            raw = _decode_template_base64(b64_value)
+        except (binascii.Error, ValueError) as e:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise HTTPException(status_code=400, detail=f"{MSG_INVALID_BASE64_IMAGE} {e}") from e
+        path = os.path.join(temp_dir, f"{safe_stem}{TEMPLATE_EXT_PNG}")
+        await asyncio.to_thread(_write_bytes_to_path, path, raw)
+        session.request_template_overrides[name] = path
+    return [temp_dir]
+
+
+async def _handle_execution_failure(
+    e: Exception, session: Session, execution_id: str, keyword: str
+) -> None:
+    """Put FAIL event and raise HTTPException. Never returns."""
+    await session.event_queue.put(ExecutionEvent(
+        execution_id=execution_id,
+        status=STATUS_FAIL,
+        message=f"Keyword {keyword} failed: {str(e)}"
+    ).model_dump())
+    if isinstance(e, OpticsError):
+        raise HTTPException(status_code=e.status_code, detail=e.to_payload(include_status=True)) from e
+    raise HTTPException(status_code=500, detail=f"{MSG_EXECUTION_FAILED} {str(e)}") from e
+
+
 @app.post("/v1/sessions/{session_id}/action")
 async def execute_keyword(session_id: str, request: ExecuteRequest):
     """
@@ -695,34 +805,22 @@ async def execute_keyword(session_id: str, request: ExecuteRequest):
     """
     session = session_manager.get_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND)
 
-    if request.mode != "keyword" or not request.keyword:
-        raise HTTPException(status_code=400, detail="Only keyword mode with a keyword is supported")
+    if request.mode != MODE_KEYWORD or not request.keyword:
+        raise HTTPException(status_code=400, detail=MSG_ONLY_KEYWORD_MODE_SUPPORTED)
 
     engine = ExecutionEngine(session_manager)
     execution_id = str(uuid.uuid4())
-    request_temp_dirs: List[str] = []
-
-    if request.template_images:
-        temp_dir = tempfile.mkdtemp(prefix="optics_request_")
-        request_temp_dirs.append(temp_dir)
-        for name, b64_value in request.template_images.items():
-            raw = _decode_template_base64(b64_value)
-            safe_name = name.replace("/", "_").replace("\\", "_")
-            path = os.path.join(temp_dir, f"{safe_name}.png")
-            with open(path, "wb") as f:
-                f.write(raw)
-            session.request_template_overrides[name] = path
+    request_temp_dirs = await _setup_request_template_overrides(session, request.template_images)
 
     try:
         await session.event_queue.put(ExecutionEvent(
             execution_id=execution_id,
-            status="RUNNING",
+            status=STATUS_RUNNING,
             message=f"Starting keyword: {request.keyword}"
         ).model_dump())
 
-        # Build keyword registry to get method signature for fallback handling
         registry = KeywordRegistry()
         action_keyword = session.optics.build(ActionKeyword)
         app_management = session.optics.build(AppManagement)
@@ -732,54 +830,39 @@ async def execute_keyword(session_id: str, request: ExecuteRequest):
         registry.register(verifier)
         registry.register(FlowControl(session=session, keyword_map=registry.keyword_map))
 
-        # Get the method to determine parameter structure
         keyword_slug = "_".join(request.keyword.split()).lower()
         method = registry.keyword_map.get(keyword_slug)
 
         if not method:
-            raise OpticsError(
-                Code.E0402,
-                message=f"Keyword {request.keyword} not found"
-            )
+            raise OpticsError(Code.E0402, message=f"Keyword {request.keyword} not found")
 
-        # Execute with fallback support via ExecutionEngine
         result = await _execute_keyword_with_fallback(
             engine, session_id, request.keyword, request.params, method, session
         )
 
         await session.event_queue.put(ExecutionEvent(
             execution_id=execution_id,
-            status="SUCCESS",
+            status=STATUS_SUCCESS,
             message=f"Keyword {request.keyword} executed successfully"
         ).model_dump())
 
         return ExecutionResponse(
             execution_id=execution_id,
-            status="SUCCESS",
-            data={"result": result} if not isinstance(result, dict) else result
+            status=STATUS_SUCCESS,
+            data={KEY_RESULT: result} if not isinstance(result, dict) else result
         )
 
     except Exception as e:
-        await session.event_queue.put(ExecutionEvent(
-            execution_id=execution_id,
-            status="FAIL",
-            message=f"Keyword {request.keyword} failed: {str(e)}"
-        ).model_dump())
-        if isinstance(e, OpticsError):
-            raise HTTPException(status_code=e.status_code, detail=e.to_payload(include_status=True)) from e
-        raise HTTPException(status_code=500, detail=f"Execution failed: {str(e)}") from e
+        await _handle_execution_failure(e, session, execution_id, request.keyword)
     finally:
         session.request_template_overrides.clear()
         for dir_path in request_temp_dirs:
             try:
                 shutil.rmtree(dir_path, ignore_errors=True)
-            except OSError:
-                pass
-
-
-def _session_inline_templates_dir(session_id: str) -> str:
-    """Return the session-scoped temp directory for inline template uploads."""
-    return os.path.join(tempfile.gettempdir(), f"optics_session_{session_id}")
+            except OSError as e:
+                internal_logger.warning(
+                    "Failed to remove request template directory %s: %s", dir_path, e
+                )
 
 
 @app.post("/v1/sessions/{session_id}/templates")
@@ -790,19 +873,21 @@ async def upload_template(session_id: str, body: TemplateUploadRequest):
     """
     session = session_manager.get_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND)
     try:
         raw = _decode_template_base64(body.image_base64)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {e}") from e
-    base_dir = _session_inline_templates_dir(session_id)
+        raise HTTPException(status_code=400, detail=f"{MSG_INVALID_BASE64_IMAGE} {e}") from e
+    base_dir = session._inline_templates_dir
     os.makedirs(base_dir, exist_ok=True)
-    safe_name = body.name.replace("/", "_").replace("\\", "_")
-    path = os.path.join(base_dir, f"{safe_name}.png")
-    with open(path, "wb") as f:
-        f.write(raw)
+    try:
+        safe_stem = _safe_template_filename(body.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    path = os.path.join(base_dir, f"{safe_stem}{TEMPLATE_EXT_PNG}")
+    await asyncio.to_thread(_write_bytes_to_path, path, raw)
     session.inline_templates[body.name] = path
-    return {"name": body.name, "status": "ok"}
+    return {"name": body.name, "status": STATUS_OK}
 
 
 @app.post("/v1/sessions/{session_id}/api", status_code=status.HTTP_204_NO_CONTENT)
@@ -816,11 +901,11 @@ async def add_session_api(session_id: str, body: Dict[str, Any] = Body(...)):
     if not session:
         raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND)
     try:
-        api_data = _parse_api_data_to_model(body, project_path=None)
-    except (ValueError, PydanticValidationError) as e:
+        api_data = _parse_api_data_to_model(body)
+    except ValueError as e:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid api_data: {e}",
+            detail=f"{MSG_INVALID_API_DATA} {e}",
         ) from e
     session.apis = api_data
 
@@ -836,7 +921,7 @@ async def run_keyword_endpoint(
     Supports both positional and named parameters with fallback support.
     """
     safe_params: Union[List[Union[str, List[str]]], Dict[str, Union[str, List[str]]]] = params or []
-    request = ExecuteRequest(mode="keyword", keyword=keyword, params=safe_params)
+    request = ExecuteRequest(mode=MODE_KEYWORD, keyword=keyword, params=safe_params)
     return await execute_keyword(session_id, request)
 
 
@@ -880,7 +965,7 @@ async def get_elements(
     """
     params: Optional[Dict[str, Union[str, List[str]]]] = None
     if filter_config:
-        params = {"filter_config": filter_config}
+        params = {PARAM_FILTER_CONFIG: filter_config}
     return await run_keyword_endpoint(session_id, "get_interactive_elements", params)
 
 @app.get("/v1/sessions/{session_id}/source")
@@ -964,9 +1049,9 @@ async def _gather_workspace_data(
         screenshot, elements = await asyncio.gather(screenshot_task, elements_task)
 
         workspace_data = {
-            "screenshot": screenshot if screenshot else "",
-            "elements": elements if elements else [],
-            "screenshotFailed": not screenshot or screenshot == ""
+            KEY_SCREENSHOT: screenshot if screenshot else "",
+            KEY_ELEMENTS: elements if elements else [],
+            KEY_SCREENSHOT_FAILED: not screenshot or screenshot == ""
         }
 
         if include_source:
@@ -975,19 +1060,19 @@ async def _gather_workspace_data(
                     asyncio.to_thread(verifier.capture_pagesource)
                 )
                 source = await source_task
-                workspace_data["source"] = source if source else ""
+                workspace_data[KEY_SOURCE] = source if source else ""
             except Exception as e:
                 internal_logger.warning(f"Failed to capture page source: {e}")
-                workspace_data["source"] = ""
+                workspace_data[KEY_SOURCE] = ""
 
         return workspace_data
     except Exception as e:
         internal_logger.error(f"Error gathering workspace data: {e}")
         return {
-            "screenshot": "",
-            "elements": [],
-            "source": "" if include_source else None,
-            "screenshotFailed": True
+            KEY_SCREENSHOT: "",
+            KEY_ELEMENTS: [],
+            KEY_SOURCE: "" if include_source else None,
+            KEY_SCREENSHOT_FAILED: True
         }
 
 def _compute_workspace_hash(workspace_data: Dict[str, Any]) -> str:
@@ -997,11 +1082,11 @@ def _compute_workspace_hash(workspace_data: Dict[str, Any]) -> str:
     """
     # Create a canonical representation for hashing
     hash_data = {
-        "screenshot": workspace_data.get("screenshot", ""),
-        "elements": json.dumps(workspace_data.get("elements", []), sort_keys=True),
+        KEY_SCREENSHOT: workspace_data.get(KEY_SCREENSHOT, ""),
+        KEY_ELEMENTS: json.dumps(workspace_data.get(KEY_ELEMENTS, []), sort_keys=True),
     }
-    if "source" in workspace_data:
-        hash_data["source"] = workspace_data.get("source", "")
+    if KEY_SOURCE in workspace_data:
+        hash_data[KEY_SOURCE] = workspace_data.get(KEY_SOURCE, "")
 
     hash_str = json.dumps(hash_data, sort_keys=True)
     return hashlib.sha256(hash_str.encode()).hexdigest()
@@ -1037,14 +1122,14 @@ async def workspace_generator(
             if last_hash is None or current_hash != last_hash:
                 workspace_hashes[session.session_id] = current_hash
                 internal_logger.debug(f"Workspace data changed for session {session.session_id}, emitting update")
-                yield {"data": json.dumps(workspace_data)}
+                yield {KEY_DATA: json.dumps(workspace_data)}
                 last_heartbeat = asyncio.get_event_loop().time()
             else:
                 # No change, check if we need to send heartbeat
                 now = asyncio.get_event_loop().time()
                 if now - last_heartbeat >= HEARTBEAT_INTERVAL:
                     internal_logger.debug(f"Heartbeat for workspace stream session {session.session_id}")
-                    yield {"data": json.dumps({"type": "heartbeat", "timestamp": now})}
+                    yield {KEY_DATA: json.dumps({KEY_TYPE: WORKSPACE_TYPE_HEARTBEAT, KEY_TIMESTAMP: now})}
                     last_heartbeat = now
 
             # Wait for next interval
@@ -1055,12 +1140,12 @@ async def workspace_generator(
             raise
         except Exception as e:
             internal_logger.error(f"Error in workspace stream for session {session.session_id}: {e}")
-            yield {"data": json.dumps({
-                "type": "error",
-                "message": str(e),
-                "screenshot": "",
-                "elements": [],
-                "screenshotFailed": True
+            yield {KEY_DATA: json.dumps({
+                KEY_TYPE: WORKSPACE_TYPE_ERROR,
+                KEY_MESSAGE: str(e),
+                KEY_SCREENSHOT: "",
+                KEY_ELEMENTS: [],
+                KEY_SCREENSHOT_FAILED: True
             })}
             # Wait before retrying to avoid tight error loops
             await asyncio.sleep(interval_seconds)
@@ -1076,44 +1161,44 @@ async def event_generator(session: Session):
             try:
                 event = await asyncio.wait_for(session.event_queue.get(), timeout=HEARTBEAT_INTERVAL)
                 internal_logger.debug(f"Streaming event for session {session.session_id}: {event}")
-                yield {"data": json.dumps(event)}
+                yield {KEY_DATA: json.dumps(event)}
             except asyncio.TimeoutError:
                 # Send heartbeat if no event in interval
                 internal_logger.debug(f"Heartbeat for session {session.session_id}")
-                yield {"data": json.dumps(ExecutionEvent(
-                    execution_id="heartbeat",
-                    status="HEARTBEAT",
+                yield {KEY_DATA: json.dumps(ExecutionEvent(
+                    execution_id=EXECUTION_ID_HEARTBEAT,
+                    status=STATUS_HEARTBEAT,
                     message="No new event, sending heartbeat"
                 ).model_dump())}
             except Exception as exc:
                 internal_logger.error(f"Unexpected error while waiting for event: {exc}")
-                yield {"data": json.dumps(ExecutionEvent(
-                    execution_id="unknown",
-                    status="ERROR",
+                yield {KEY_DATA: json.dumps(ExecutionEvent(
+                    execution_id=EXECUTION_ID_UNKNOWN,
+                    status=STATUS_ERROR,
                     message=f"Unexpected error while waiting for event: {exc}"
                 ).model_dump())}
                 break
         except AttributeError as attr_err:
             internal_logger.error(f"AttributeError in event streaming for session {session.session_id}: {attr_err}")
-            yield {"data": json.dumps(ExecutionEvent(
-                execution_id="unknown",
-                status="ERROR",
+            yield {KEY_DATA: json.dumps(ExecutionEvent(
+                execution_id=EXECUTION_ID_UNKNOWN,
+                status=STATUS_ERROR,
                 message=f"AttributeError: {attr_err}"
             ).model_dump())}
             break
         except asyncio.CancelledError as cancel_err:
             internal_logger.warning(f"Event streaming cancelled for session {session.session_id}: {cancel_err}")
-            yield {"data": json.dumps(ExecutionEvent(
-                execution_id="unknown",
-                status="CANCELLED",
+            yield {KEY_DATA: json.dumps(ExecutionEvent(
+                execution_id=EXECUTION_ID_UNKNOWN,
+                status=STATUS_CANCELLED,
                 message=f"Event streaming cancelled: {cancel_err}"
             ).model_dump())}
             raise
         except Exception as e:
             internal_logger.error(f"General error in event streaming for session {session.session_id}: {e}")
-            yield {"data": json.dumps(ExecutionEvent(
-                execution_id="unknown",
-                status="ERROR",
+            yield {KEY_DATA: json.dumps(ExecutionEvent(
+                execution_id=EXECUTION_ID_UNKNOWN,
+                status=STATUS_ERROR,
                 message=f"Event streaming failed: {e}"
             ).model_dump())}
             break
@@ -1125,8 +1210,8 @@ async def delete_session(session_id: str):
     Returns termination status.
     """
     kill_request = ExecuteRequest(
-        mode="keyword",
-        keyword="close_and_terminate_app",
+        mode=MODE_KEYWORD,
+        keyword=KEYWORD_CLOSE_AND_TERMINATE_APP,
         params=[]
     )
     try:
@@ -1135,7 +1220,7 @@ async def delete_session(session_id: str):
         internal_logger.error(f"Failed to terminate session {session_id}: {e}")
         if isinstance(e, OpticsError):
             raise HTTPException(status_code=e.status_code, detail=e.to_payload(include_status=True)) from e
-        raise HTTPException(status_code=500, detail=f"Session termination failed: {e}") from e
+        raise HTTPException(status_code=500, detail=f"{MSG_SESSION_TERMINATION_FAILED} {e}") from e
     session_manager.terminate_session(session_id)
     # Clean up workspace hash entry to prevent memory leak
     workspace_hashes.pop(session_id, None)

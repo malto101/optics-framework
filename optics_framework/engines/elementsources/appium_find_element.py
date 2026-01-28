@@ -184,4 +184,7 @@ class AppiumFindElement(ElementSourceInterface):
                     return result
             except Exception as e:
                 raise OpticsError(Code.E0401, message=f"Error during element assertion: {e}") from e
-        return False, utils.get_timestamp()
+        internal_logger.warning(f"Timeout reached. Rule: {rule}, Elements: {elements}")
+        raise TimeoutError(
+            f"Timeout reached: Elements not found based on rule '{rule}': {elements}"
+        )
