@@ -97,7 +97,7 @@ List,"[""xpath"",""text"",""images""]"
 ```
 
 - **Element_Name**: The variable name used in `test_modules.csv`.
-- **Element_ID**: The actual identifier (e.g., XPath, text value, or image filename).
+- **Element_ID**: The actual identifier (e.g., XPath, text value, or image filename). To include newlines in XPath or locator values, use `\n` in the CSV; use `\t` for tab and `\\` for a literal backslash.
 
 ## Configuration File (config.yaml)
 

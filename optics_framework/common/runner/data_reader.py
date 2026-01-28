@@ -9,6 +9,7 @@ from optics_framework.common.models import (
     ApiDefinition,
     ExpectedResultDefinition,
 )
+from optics_framework.common.utils import unescape_csv_value
 
 
 class DataReader(ABC):
@@ -161,10 +162,10 @@ class CSVDataReader(DataReader):
             module_name = row["module_name"].strip()
             keyword = row["module_step"].strip()
             params = [
-                row[key].strip()
+                unescape_csv_value(str(row[key]).strip())
                 for key in row
                 if key is not None
-                if key.startswith("param_") and row[key] and row[key].strip()
+                if key.startswith("param_") and row[key] and str(row[key]).strip()
             ]
             if module_name not in modules:
                 modules[module_name] = []
@@ -189,12 +190,12 @@ class CSVDataReader(DataReader):
             element_name = row.get("Element_Name", "").strip()
             # Support multiple element IDs for fallback: look for all keys starting with "Element_ID"
             element_ids = [
-                row[key].strip()
+                unescape_csv_value(str(row[key]).strip())
                 for key in row
                 if key is not None
                 and re.sub(r"\s+", "", key).lower().startswith("element_id")
                 and row[key]
-                and row[key].strip()
+                and str(row[key]).strip()
             ]
             if element_name and element_ids:
                 if element_name not in elements:

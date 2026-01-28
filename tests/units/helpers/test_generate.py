@@ -659,6 +659,64 @@ class TestCSVDataReader:
 
     @pytest.mark.generate
     @pytest.mark.white_box
+    def test_format_param_value_unescapes_escape_sequences(self):
+        """Test that _format_param_value unescapes \\n, \\t, \\r, \\\\ for XPath/locator support in CSV."""
+        assert self.reader._format_param_value("I\\nIcici") == "I\nIcici"
+        assert self.reader._format_param_value("a\\tb") == "a\tb"
+        assert self.reader._format_param_value("a\\rb") == "a\rb"
+        assert self.reader._format_param_value("a\\\\b") == "a\\b"
+        # \\\\n must become backslash+n, not newline (unescape processes \\\\ first via placeholder)
+        assert self.reader._format_param_value("a\\\\nc") == "a\\nc"
+
+    @pytest.mark.generate
+    @pytest.mark.white_box
+    def test_read_elements_unescapes_newline_in_xpath(self):
+        """Test that read_elements turns \\n in Element_ID into a real newline (e.g. for content-desc)."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, newline=""
+        ) as f:
+            f.write(
+                "Element_Name,Element_ID\n"
+                '"icici_logo","//android.widget.ImageView[@content-desc=""I\\nIcici Bank Limited""]"\n'
+            )
+            path = f.name
+        try:
+            result = self.reader.read_elements(path)
+            assert "icici_logo" in result
+            val = result["icici_logo"]
+            assert "\n" in val
+            assert "I" in val and "Icici Bank Limited" in val
+            assert val == '//android.widget.ImageView[@content-desc="I\nIcici Bank Limited"]'
+        finally:
+            os.unlink(path)
+
+    @pytest.mark.generate
+    @pytest.mark.white_box
+    def test_read_modules_unescapes_newline_in_param(self):
+        """Test that read_modules turns \\n in a param into a real newline (e.g. inline XPath)."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, newline=""
+        ) as f:
+            f.write(
+                "module_name,module_step,param_1,param_2\n"
+                'my_module,Get Text,"//*[@desc=""A\\nB""]",\n'
+            )
+            path = f.name
+        try:
+            result = self.reader.read_modules(path)
+            assert "my_module" in result
+            steps = result["my_module"]
+            assert len(steps) == 1
+            kw, params = steps[0]
+            assert kw == "Get Text"
+            assert len(params) >= 1
+            assert "\n" in params[0]
+            assert params[0] == '//*[@desc="A\nB"]'
+        finally:
+            os.unlink(path)
+
+    @pytest.mark.generate
+    @pytest.mark.white_box
     def test_read_elements_basic(self):
         """Test reading elements from CSV."""
         # Create mock DataFrame

@@ -7,6 +7,8 @@ import yaml
 import json
 import shutil
 
+from optics_framework.common.utils import unescape_csv_value
+
 TestCaseKey = "Test Cases"
 
 # Type aliases for clarity
@@ -73,11 +75,19 @@ class CSVDataReader(DataReader):
 
     def _format_param_value(self, value) -> str:
         """Format parameter value, preserving the original format from CSV."""
-        return str(value).strip()
+        return unescape_csv_value(str(value).strip())
 
     def read_elements(self, source: str) -> Elements:
         df = pd.read_csv(source)
-        return dict(zip(df["Element_Name"].str.strip(), df["Element_ID"].str.strip()))
+        def _ensure_str_and_unescape(val):  # ensures type checker sees str passed to unescape_csv_value
+            return unescape_csv_value(str(val).strip())
+
+        return dict(
+            zip(
+                df["Element_Name"].str.strip(),
+                df["Element_ID"].fillna("").str.strip().map(_ensure_str_and_unescape),
+            )
+        )
 
     def read_config(self, source: str) -> Config:
         with open(source, "r", encoding="utf-8") as f:

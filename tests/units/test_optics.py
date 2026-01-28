@@ -7,7 +7,7 @@ from tests.mock_servers.single_server import run_single_server
 
 
 CONTACT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '../../optics_framework/samples/contact/config.yaml')
-ELEMENTS_CSV_PATH = os.path.join(os.path.dirname(__file__), '../../optics_framework/samples/contact/elements.csv')
+ELEMENTS_CSV_PATH = os.path.join(os.path.dirname(__file__), '../../optics_framework/samples/contact/test_data/elements.csv')
 
 
 def load_config(config_path):

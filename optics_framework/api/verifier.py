@@ -195,11 +195,20 @@ class Verifier:
         """
         Retrieves a list of interactive elements on the current screen.
 
+        XPath and text fields are converted to one-line, CSV-friendly form (newlines
+        as \\n, tabs as \\t, etc.) so output can be pasted into elements.csv or similar.
+
         :param filter_config: Optional list of filter types (e.g., ["buttons", "inputs"]).
         :type filter_config: Optional[List[str]]
         :return: A list of interactive elements.
         """
         elements = self.strategy_manager.get_interactive_elements(filter_config)
+        for el in elements:
+            if isinstance(el, dict):
+                if "xpath" in el and el["xpath"] is not None:
+                    el["xpath"] = utils.escape_csv_value(str(el["xpath"]))
+                if "text" in el and el["text"] is not None:
+                    el["text"] = utils.escape_csv_value(str(el["text"]))
         utils.save_interactable_elements(elements, output_dir=self.execution_dir)
         return elements
 

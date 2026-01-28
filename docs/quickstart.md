@@ -157,6 +157,9 @@ Use Appium Inspector or your device's UI Automator to find element XPaths:
 4. Copy the XPath
 5. Paste into `Element_ID_xpath` column
 
+!!! tip "Newlines and special characters in CSV"
+    XPaths and other locator strings in CSV stay one line per row. To include a newline in a value (e.g. in `@content-desc`), use `\n`; for a tab use `\t`, and for a literal backslash use `\\`. Example: `//android.widget.ImageView[@content-desc="I\nIcici Bank Limited"]` in a cell is read as an XPath whose attribute value contains a real newline between `I` and `Icici Bank Limited`.
+
 ## :material-puzzle: Step 4: Create Reusable Modules
 
 Modules are sequences of actions that accomplish a specific task, such as building blocks.
