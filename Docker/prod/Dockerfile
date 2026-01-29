@@ -18,10 +18,15 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     curl \
     libgl1 \
     libglib2.0-0 \
+    xvfb \
+    dbus-x11 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
-RUN uv pip install --system appium-python-client
+RUN uv pip install --system appium-python-client playwright
+
+# Install Playwright system dependencies for Chromium and Firefox (must be done as root)
+RUN playwright install-deps chromium firefox
 
 # Install optics-framework and vision backend (late layer for cache efficiency)
 
@@ -41,13 +46,22 @@ RUN uv pip install --system optics-framework \
 # Set permissions
 RUN chown -R appuser:appuser /app
 
-# Switch to non-root user
+# Switch to non-root user to install Playwright browsers in user's cache
 USER appuser
+
+# Install Playwright browsers (Chromium and Firefox) as appuser (must be done as the user who will run the app)
+RUN playwright install chromium firefox
+
+# Note: We stay as appuser for the rest of the Dockerfile
 
 EXPOSE 8000
 
 # Allow dynamic worker count via UVICORN_WORKERS env variable (default 1)
 ENV UVICORN_WORKERS=1
 
+# Set DISPLAY for X11 (xvfb will provide virtual display)
+ENV DISPLAY=:99
+
 # Use exec form for CMD with shell for env var substitution
-CMD ["/bin/sh", "-c", "exec optics serve --host 0.0.0.0 --port 8000 --workers \"${UVICORN_WORKERS:-1}\""]
+# Start xvfb in the background, then run optics serve
+CMD ["/bin/sh", "-c", "Xvfb :99 -screen 0 1280x1024x24 > /dev/null 2>&1 & exec optics serve --host 0.0.0.0 --port 8000 --workers \"${UVICORN_WORKERS:-1}\""]
