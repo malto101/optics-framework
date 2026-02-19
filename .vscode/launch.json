@@ -1,0 +1,92 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Optics CLI - Execute Contact",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/optics_framework/helper/cli.py",
+            "args": [
+                "execute",
+                "${workspaceFolder}/optics_framework/samples/contact",
+                "--runner",
+                "test_runner"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "stopOnEntry": false
+        },
+        {
+            "name": "Optics CLI - Dry Run Contact",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/optics_framework/helper/cli.py",
+            "args": [
+                "dry_run",
+                "${workspaceFolder}/optics_framework/samples/contact",
+                "--runner",
+                "test_runner"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "stopOnEntry": false
+        },
+        {
+            "name": "Optics CLI - Execute YouTube",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/optics_framework/helper/cli.py",
+            "args": [
+                "execute",
+                "${workspaceFolder}/optics_framework/samples/youtube",
+                "--runner",
+                "test_runner"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "stopOnEntry": false
+        },
+        {
+            "name": "Optics CLI - Help",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/optics_framework/helper/cli.py",
+            "args": ["--help"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "stopOnEntry": false
+        },
+        {
+            "name": "Optics CLI - Serve",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/optics_framework/helper/cli.py",
+            "args": [
+                "serve"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "stopOnEntry": false
+        }
+    ]
+}
