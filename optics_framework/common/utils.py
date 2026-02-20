@@ -15,6 +15,8 @@ from skimage.metrics import structural_similarity as ssim
 from optics_framework.common.logging_config import internal_logger
 
 OUTPUT_PATH_NOT_SET_MSG = "output_dir is required. Pass it from the session's execution_output_path."
+TEXT_ONLY_PREFIX = "text_only:"
+
 
 class SpecialKey(Enum):
     # Basic keys (supported by both BLE and Appium)
@@ -127,6 +129,11 @@ def escape_csv_value(s: str) -> str:
 
 
 def determine_element_type(element):
+
+    element = element.lstrip().rstrip()
+    # Handle TEXT_ONLY: prefix - determine type from the remainder
+    if element.lower().startswith(TEXT_ONLY_PREFIX):
+        return "Text"
     # Check if the input is an Image path
     if element.split(".")[-1] in ["jpg", "jpeg", "png", "bmp"]:
         return "Image"
@@ -154,6 +161,14 @@ def determine_element_type(element):
         return "CSS"
     # Default case: consider the input as Text
     return "Text"
+
+
+def parse_text_only_prefix(element: str) -> Tuple[str, bool]:
+    """Return (stripped_element, use_text_detection_only)."""
+    if element.lower().startswith(TEXT_ONLY_PREFIX):
+        return (element[len(TEXT_ONLY_PREFIX) :].lstrip(), True)
+    return (element, False)
+
 
 def get_timestamp():
     try:

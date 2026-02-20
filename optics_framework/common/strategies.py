@@ -607,18 +607,24 @@ class StrategyManager:
         return None
 
     def locate(self, element: str, aoi_x=None, aoi_y=None, aoi_width=None, aoi_height=None, index: int = 0) -> Generator[LocateResult, None, None]:
+        effective_element, text_only = utils.parse_text_only_prefix(element)
         element_type = utils.determine_element_type(element)
         internal_logger.info(f"Locating element: {element} of type: {element_type}...")
         use_aoi = self._validate_aoi(aoi_x, aoi_y, aoi_width, aoi_height)
 
+        yielded = False
         for strategy in self.locator_strategies:
+            if text_only and type(strategy).__name__ == "TextElementStrategy":
+                continue
             execution_logger.debug(f"Trying strategy: {type(strategy).__name__} for element: {element}")
             locate_result = self._try_strategy_locate(
-                strategy, element, element_type, use_aoi, aoi_x, aoi_y, aoi_width, aoi_height, index
+                strategy, effective_element, element_type, use_aoi, aoi_x, aoi_y, aoi_width, aoi_height, index
             )
             if locate_result:
+                yielded = True
                 yield locate_result
-        raise OpticsError(Code.E0201, message=f"Element '{element}' not found.")
+        if not yielded:
+            raise OpticsError(Code.E0201, message=f"Element '{element}' not found.")
 
     def _alloc_time_for_strategy(
         self, deadline: float, idx: int, applicable_strategies: List[Any]
@@ -643,12 +649,20 @@ class StrategyManager:
         execution_logger.info(
             f"Asserting presence of elements: {elements} with rule: {rule} and timeout: {timeout}s")
 
+        effective_elements = [utils.parse_text_only_prefix(el)[0] for el in elements]
+        has_text_only = any(utils.parse_text_only_prefix(el)[1] for el in elements)
+
         deadline = time.time() + timeout
         last_exception = None
         applicable_strategies = [
             s for s in self.locator_strategies
             if self._can_strategy_assert_elements(s, element_type)
         ]
+        if has_text_only:
+            applicable_strategies = [
+                s for s in applicable_strategies
+                if type(s).__name__ != "TextElementStrategy"
+            ]
         if not applicable_strategies:
             raise OpticsError(Code.E0201, message="No elements found.")
 
@@ -664,7 +678,7 @@ class StrategyManager:
             )
             try:
                 result, timestamp, annotated_frame = self._try_assert_with_strategy(
-                    strategy, elements, alloc, rule
+                    strategy, effective_elements, alloc, rule
                 )
                 if result:
                     return result, timestamp, annotated_frame
