@@ -676,32 +676,32 @@ class BLEDriver(DriverInterface):
 
     def swipe_percentage(
         self,
-        x_percentage: float,
-        y_percentage: float,
+        x_percentage: int,
+        y_percentage: int,
         direction: str,
-        swipe_percentage: float,
+        swipe_length_percentage: int,
         event_name: Optional[str] = None,
     ) -> None:
         """
         Perform a swipe action using percentage coordinates via BLE.
 
-        :param x_percentage: X coordinate of the swipe as a percentage.
-        :type x_percentage: float
-        :param y_percentage: Y coordinate of the swipe as a percentage.
-        :type y_percentage: float
+        :param x_percentage: X coordinate of the swipe as a percentage (0-100).
+        :type x_percentage: int
+        :param y_percentage: Y coordinate of the swipe as a percentage (0-100).
+        :type y_percentage: int
         :param direction: Direction of the swipe (e.g., "up", "down", "left", "right").
         :type direction: str
-        :param swipe_percentage: Length of the swipe as a percentage.
-        :type swipe_percentage: float
+        :param swipe_length_percentage: Length of the swipe as a percentage (0-100).
+        :type swipe_length_percentage: int
         :param event_name: The event triggering the swipe.
         :type event_name: str
         """
         internal_logger.debug(
-            f"Swiping {direction} from ({x_percentage}, {y_percentage}) with length {swipe_percentage} via BLE."
+            f"Swiping {direction} from ({x_percentage}, {y_percentage}) with length {swipe_length_percentage} via BLE."
         )
-        x_coor = int(x_percentage * self.pixel_width)
-        y_coor = int(y_percentage * self.pixel_height)
-        swipe_length = int(swipe_percentage * self.pixel_width)
+        x_coor = int(x_percentage * self.pixel_width / 100)
+        y_coor = int(y_percentage * self.pixel_height / 100)
+        swipe_length = int(swipe_length_percentage * self.pixel_width / 100)
         self.translate_coordinates_relative_pixel(self.MOUSE_BUTTON_RELEASED, x_coor, y_coor)
         if event_name:
             self.event_sdk.capture_event(event_name)

@@ -301,6 +301,21 @@ class ActionKeyword:
         internal_logger.info(f'Swiping from ({coor_x}, {coor_y}) to the {direction} with length {swipe_length}')
         self.driver.swipe(int(coor_x), int(coor_y), direction, int(swipe_length), event_name)
 
+    def swipe_by_percentage(self, percent_x: str, percent_y: str, direction: str = 'right', swipe_length: str = "50", event_name: Optional[str] = None) -> None:
+        """
+        Perform a swipe action in a specified direction by percentage.
+
+        :param percent_x: X percentage of the swipe.
+        :param percent_y: Y percentage of the swipe.
+        :param direction: The swipe direction (up, down, left, right).
+        :param swipe_length: The length of the swipe.
+        :param event_name: The event triggering the swipe.
+        """
+        screenshot_np = self.strategy_manager.capture_screenshot()
+        utils.save_screenshot(screenshot_np, "swipe_percentage", output_dir=self.execution_dir)
+        internal_logger.info(f'Swiping from ({percent_x}, {percent_y}) to the {direction} with length {swipe_length}')
+        self.driver.swipe_percentage(int(percent_x), int(percent_y), direction, int(swipe_length), event_name)
+
     @DeprecationWarning
     def swipe_seekbar_to_right_android(self, element: str, event_name: Optional[str] = None) -> None:
         """

@@ -210,6 +210,9 @@ optics.clear_element_text("input_field")
 # Swipe from (x1, y1) to (x2, y2)
 optics.swipe(100, 200, 300, 400)
 
+# Swipe by percentage (x%, y%, direction, swipe length % — all integers 0-100)
+optics.swipe_percentage(50, 50, "up", 25)
+
 # Swipe until element appears
 optics.swipe_until_element_appears("target_element", direction="up")
 

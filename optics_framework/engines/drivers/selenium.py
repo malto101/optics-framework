@@ -338,7 +338,7 @@ class SeleniumDriver(DriverInterface):
     def swipe(self, x_coor: int, y_coor: int, direction: str, swipe_length: int, event_name: str | None = None) -> None:
         self._raise_action_not_supported()
 
-    def swipe_percentage(self, x_percentage: float, y_percentage: float, direction: str, swipe_percentage: float, event_name: str | None = None) -> None:
+    def swipe_percentage(self, x_percentage: int, y_percentage: int, direction: str, swipe_length_percentage: int, event_name: str | None = None) -> None:
         self._raise_action_not_supported()
 
     def swipe_element(self, element, direction: str, swipe_length: int, event_name: str | None = None) -> None:

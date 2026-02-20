@@ -725,6 +725,27 @@ class Optics:
             cast(Optional[str], event_name),
         )
 
+    @keyword("Swipe By Percentage")
+    @fallback_params
+    def swipe_by_percentage(
+        self,
+        percent_x: fallback_str,
+        percent_y: fallback_str,
+        direction: fallback_str = "right",
+        swipe_length: fallback_str = "50",
+        event_name: Optional[fallback_str] = None,
+    ) -> None:
+        """Swipe by percentage."""
+        if not self.action_keyword:
+            raise ValueError(INVALID_SETUP)
+        self.action_keyword.swipe_by_percentage(
+            cast(str, percent_x),
+            cast(str, percent_y),
+            cast(str, direction),
+            cast(str, swipe_length),
+            cast(Optional[str], event_name),
+        )
+
     @keyword("Swipe Until Element Appears")
     @fallback_params
     def swipe_until_element_appears(

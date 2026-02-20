@@ -112,6 +112,26 @@ Performs a swipe action in a specified direction from given coordinates.
 Swipe,500,800,down,100,swipe_down
 ```
 
+### Swipe Percentage
+
+Performs a swipe action in a specified direction by percentage of the screen (0-100).
+
+**Parameters:**
+
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `percent_x` | Required | X position of the swipe start as a percentage of screen width (integer, 0-100) | - |
+| `percent_y` | Required | Y position of the swipe start as a percentage of screen height (integer, 0-100) | - |
+| `direction` | Optional | The swipe direction: `up`, `down`, `left`, or `right` | `right` |
+| `swipe_length` | Optional | Length of the swipe as a percentage of the screen (integer, 0-100) | `50` |
+| `event_name` | Optional | A string identifier for the swipe event | - |
+
+**Example:**
+
+```csv
+Swipe Percentage,50,50,up,25,swipe_up
+```
+
 ### Swipe Until Element Appears
 
 Swipes in a specified direction until an element appears.

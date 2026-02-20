@@ -218,13 +218,13 @@ class YourDriver(DriverInterface):
 
     def swipe_percentage(
         self,
-        x_percentage: float,
-        y_percentage: float,
+        x_percentage: int,
+        y_percentage: int,
         direction: str,
-        swipe_percentage: float,
+        swipe_length_percentage: int,
         event_name: Optional[str] = None
     ) -> None:
-        """Swipe by percentage."""
+        """Swipe by percentage (x_percentage, y_percentage, swipe_length_percentage are integers 0-100)."""
         if self.event_sdk:
             self.event_sdk.track_action("swipe_percentage", event_name)
 

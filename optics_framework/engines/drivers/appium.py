@@ -634,10 +634,10 @@ class Appium(DriverInterface):
 
     def swipe_percentage(
         self,
-        x_percentage: float,
-        y_percentage: float,
+        x_percentage: int,
+        y_percentage: int,
         direction: str,
-        swipe_percentage: float,
+        swipe_length_percentage: int,
         event_name: Optional[str] = None
     ) -> None:
         driver = self._require_driver()
@@ -648,9 +648,9 @@ class Appium(DriverInterface):
         start_y = int(height * y_percentage / 100)
         swipe_length: int
         if direction in ("up", "down"):
-            swipe_length = int(height * swipe_percentage / 100)
+            swipe_length = int(height * swipe_length_percentage / 100)
         elif direction in ("left", "right"):
-            swipe_length = int(width * swipe_percentage / 100)
+            swipe_length = int(width * swipe_length_percentage / 100)
         else:
             internal_logger.error(f"Unknown swipe direction: {direction}")
             return

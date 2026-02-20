@@ -39,7 +39,7 @@ driver_sources:
 - `launch_app()` - Launch with package/activity
 - `press_coordinates()` - Tap at absolute coordinates
 - `press_element()` - Tap UI elements
-- `swipe()` / `swipe_percentage()` - Swipe gestures
+- `swipe()` / `swipe_percentage(x%, y%, direction, length%)` - Swipe gestures (percentages as integers 0-100)
 - `scroll()` - Scroll actions
 - `enter_text()` - Text input
 - `press_keycode()` - Hardware key codes

@@ -248,12 +248,12 @@ class Playwright(DriverInterface):
         delta = swipe_length if direction == "down" else -swipe_length
         run_async(self.page.mouse.wheel(0, delta))
 
-    def swipe_percentage(self, x_per, y_per, direction, swipe_per, event_name=None):
-        run_async(self._swipe_percentage_async(direction, swipe_per))
+    def swipe_percentage(self, x_per: int, y_per: int, direction: str, swipe_length_percentage: int, event_name=None):
+        run_async(self._swipe_percentage_async(direction, swipe_length_percentage))
 
-    async def _swipe_percentage_async(self, direction, swipe_per):
+    async def _swipe_percentage_async(self, direction: str, swipe_length_percentage: int):
         vp = self.page.viewport_size
-        delta = int(vp["height"] * swipe_per / 100)
+        delta = int(vp["height"] * swipe_length_percentage / 100)
         if direction != "down":
             delta = -delta
         await self.page.mouse.wheel(0, delta)

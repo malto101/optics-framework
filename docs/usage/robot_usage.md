@@ -201,6 +201,8 @@ Gesture Test
 
     # Swipe
     Swipe    100    200    300    400
+    # Swipe by percentage (x%, y%, direction, swipe length % — integers 0-100)
+    Swipe Percentage    50    50    up    25
     Swipe Until Element Appears    target_element    direction=up
     Swipe From Element    source_element    300    400
 
@@ -540,6 +542,7 @@ Element Interaction Test
 
     # Gestures
     Swipe    100    200    300    400
+    Swipe Percentage    50    50    up    25
     Scroll    100    200    300    400
 
     # Verification

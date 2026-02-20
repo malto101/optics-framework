@@ -171,7 +171,7 @@ class DriverInterface(ABC):
         :param x_coor: The starting x coordinate of the swipe.
         :param y_coor: The starting y coordinate of the swipe.
         :param direction: The direction of the swipe.
-        :param swipe_percentage: The percentage of the screen to swipe.
+        :param swipe_length: The length of the swipe in pixels.
         :param event_name: The event triggering the swipe.
         :raises NotImplementedError: If the method is not implemented in a subclass.
         :return: None
@@ -180,13 +180,13 @@ class DriverInterface(ABC):
         pass
 
     @abstractmethod
-    def swipe_percentage(self, x_percentage: float, y_percentage: float, direction: str, swipe_percentage: float, event_name: Optional[str] = None) -> None:
+    def swipe_percentage(self, x_percentage: int, y_percentage: int, direction: str, swipe_length_percentage: int, event_name: Optional[str] = None) -> None:
         """
         Swipe in a specified direction by percentage.
-        :param x_percentage: The starting x coordinate of the swipe as a percentage of the screen width.
-        :param y_percentage: The starting y coordinate of the swipe as a percentage of the screen height.
+        :param x_percentage: The starting x coordinate of the swipe as a percentage of the screen width (0-100).
+        :param y_percentage: The starting y coordinate of the swipe as a percentage of the screen height (0-100).
         :param direction: The direction of the swipe.
-        :param swipe_percentage: The percentage of the screen to swipe.
+        :param swipe_length_percentage: The percentage of the screen to swipe (0-100).
         :param event_name: The event triggering the swipe.
         :raises NotImplementedError: If the method is not implemented in a subclass.
         :return: None
