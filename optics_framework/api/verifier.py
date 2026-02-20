@@ -176,20 +176,20 @@ class Verifier:
         return screenshot
 
 
-    def capture_pagesource(self, event_name: Optional[str] = None) -> str:
+    def capture_pagesource(self, event_name: Optional[str] = None) -> dict:
         """
-        Captures the page source of the current screen.
+        Captures the page source and timestamp of the current screen.
 
         :param event_name: The name of the event associated with the page source capture, if any.
-        :return: The page source as a string.
+        :return: Dict with "page_source" and "timestamp" keys.
         """
-        page_source = self.strategy_manager.capture_pagesource()
+        result = self.strategy_manager.capture_pagesource()
         if event_name:
             self.event_sdk.capture_event(event_name)
-        if page_source is not None:
-            return page_source
-        else:
-            raise ValueError("Page source capture returned None.")
+        if result is not None:
+            page_source, timestamp = result
+            return {"page_source": page_source, "timestamp": timestamp}
+        raise ValueError("Page source capture returned None.")
 
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> list:
         """

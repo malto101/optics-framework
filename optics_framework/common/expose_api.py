@@ -79,6 +79,7 @@ KEY_CAPABILITIES = "capabilities"
 KEY_SCREENSHOT = "screenshot"
 KEY_ELEMENTS = "elements"
 KEY_SOURCE = "source"
+KEY_SOURCE_TIMESTAMP = "sourceTimestamp"
 KEY_SCREENSHOT_FAILED = "screenshotFailed"
 KEY_TYPE = "type"
 KEY_MESSAGE = "message"
@@ -1059,11 +1060,17 @@ async def _gather_workspace_data(
                 source_task = asyncio.create_task(
                     asyncio.to_thread(verifier.capture_pagesource)
                 )
-                source = await source_task
-                workspace_data[KEY_SOURCE] = source if source else ""
+                source_result = await source_task
+                if source_result and isinstance(source_result, dict):
+                    workspace_data[KEY_SOURCE] = source_result.get("page_source", "") or ""
+                    workspace_data[KEY_SOURCE_TIMESTAMP] = source_result.get("timestamp", "") or ""
+                else:
+                    workspace_data[KEY_SOURCE] = ""
+                    workspace_data[KEY_SOURCE_TIMESTAMP] = ""
             except Exception as e:
                 internal_logger.warning(f"Failed to capture page source: {e}")
                 workspace_data[KEY_SOURCE] = ""
+                workspace_data[KEY_SOURCE_TIMESTAMP] = ""
 
         return workspace_data
     except Exception as e:
@@ -1072,6 +1079,7 @@ async def _gather_workspace_data(
             KEY_SCREENSHOT: "",
             KEY_ELEMENTS: [],
             KEY_SOURCE: "" if include_source else None,
+            KEY_SOURCE_TIMESTAMP: "" if include_source else None,
             KEY_SCREENSHOT_FAILED: True
         }
 

@@ -1023,8 +1023,8 @@ class Optics:
         return self.verifier.capture_screenshot()
 
     @keyword("Capture Page Source")
-    def capture_pagesource(self) -> str:
-        """Capture the page source of the current screen."""
+    def capture_pagesource(self) -> dict:
+        """Capture the page source and timestamp of the current screen."""
         if not self.verifier:
             raise ValueError(INVALID_SETUP)
         return self.verifier.capture_pagesource()

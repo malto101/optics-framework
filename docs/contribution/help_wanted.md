@@ -411,7 +411,7 @@ async def locate_xpath_parallel(element: str):
 
     async def page_source_coords():
         """Parse page source to find XPath and get coordinates"""
-        page_source = await element_source.get_page_source()
+        page_source, _ = await element_source.get_page_source()
         xpath_node = parse_xpath_from_page_source(page_source, element)
         if xpath_node:
             return get_coordinates_from_node(xpath_node)
@@ -440,7 +440,7 @@ async def locate_text_parallel(text: str):
 
     async def page_source_path():
         """Page source → Find text → Convert to XPath → findElement"""
-        page_source = await element_source.get_page_source()
+        page_source, _ = await element_source.get_page_source()
         xpath = find_text_in_page_source(page_source, text)
         if xpath:
             return await element_source.locate(xpath)
