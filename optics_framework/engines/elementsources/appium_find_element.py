@@ -49,21 +49,22 @@ class AppiumFindElement(ElementSourceInterface):
         raise NotImplementedError('Appium Find Element does not support capturing the screen state.')
 
 
-    def get_page_source(self) -> str:
+    def get_page_source(self) -> Tuple[str, str]:
         """
         Get the page source of the current page.
         Returns:
-            str: The page source.
+            Tuple[str, str]: (page_source, timestamp)
         """
         # Fetch the current UI tree (page source) from the Appium driver.
         driver = self._require_driver()
         page_source = driver.page_source
+        timestamp = utils.get_timestamp()
         self.tree = etree.ElementTree(etree.fromstring(page_source.encode('utf-8')))
         if self.tree is not None:
             self.root = self.tree.getroot()
         else:
             self.root = None
-        return page_source
+        return str(page_source), str(timestamp)
 
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> List[Any]:
         """

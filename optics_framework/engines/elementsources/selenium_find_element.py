@@ -31,18 +31,18 @@ class SeleniumFindElement(ElementSourceInterface):
         internal_logger.exception(msg)
         raise NotImplementedError(msg)
 
-    def get_page_source(self) -> str:
+    def get_page_source(self) -> Tuple[str, str]:
         """
         Get the page source of the current page.
         Returns:
-            str: The page source.
+            Tuple[str, str]: (page_source, timestamp)
         """
         if self.driver is None:
             internal_logger.error(NOT_INITIALISED_MSG)
             raise RuntimeError(NOT_INITIALISED_MSG)
         page_source = self.driver.page_source
-        # Optionally parse tree/root for future extensibility
-        return page_source
+        timestamp = utils.get_timestamp()
+        return str(page_source), str(timestamp)
 
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None):
         msg = "Getting interactive elements is not yet supported using Selenium Find Element."

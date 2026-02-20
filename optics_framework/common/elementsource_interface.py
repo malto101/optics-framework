@@ -75,6 +75,18 @@ class ElementSourceInterface(ABC):
         """
         return None
 
+    def get_page_source(self) -> Tuple[str, str]:
+        """
+        Get the page source and timestamp of the current screen.
+        Optional: raise NotImplementedError if this element source does not support it.
+
+        :return: Tuple of (page_source, timestamp).
+        :rtype: Tuple[str, str]
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support get_page_source"
+        )
+
     @abstractmethod
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> list:
         """

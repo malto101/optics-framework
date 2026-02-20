@@ -79,6 +79,7 @@ KEY_CAPABILITIES = "capabilities"
 KEY_SCREENSHOT = "screenshot"
 KEY_ELEMENTS = "elements"
 KEY_SOURCE = "source"
+KEY_SOURCE_TIMESTAMP = "sourceTimestamp"
 KEY_SCREENSHOT_FAILED = "screenshotFailed"
 KEY_TYPE = "type"
 KEY_MESSAGE = "message"
@@ -1026,6 +1027,28 @@ async def list_keywords():
     return discover_keywords()
 
 
+def _empty_workspace_data(include_source: bool) -> Dict[str, Any]:
+    """Return empty workspace data for error fallback."""
+    data: Dict[str, Any] = {
+        KEY_SCREENSHOT: "",
+        KEY_ELEMENTS: [],
+        KEY_SCREENSHOT_FAILED: True,
+    }
+    if include_source:
+        data[KEY_SOURCE] = ""
+    return data
+
+
+async def _capture_source_safe(verifier: Verifier) -> str:
+    """Capture page source, returning empty string on failure."""
+    try:
+        source = await asyncio.to_thread(verifier.capture_pagesource)
+        return source or ""
+    except Exception as e:
+        internal_logger.warning(f"Failed to capture page source: {e}")
+        return ""
+
+
 async def _gather_workspace_data(
     session: Session,
     include_source: bool = False,
@@ -1038,42 +1061,24 @@ async def _gather_workspace_data(
     try:
         verifier = session.optics.build(Verifier)
 
-        # Gather screenshot and elements in parallel
-        screenshot_task = asyncio.create_task(
-            asyncio.to_thread(verifier.capture_screenshot)
-        )
-        elements_task = asyncio.create_task(
-            asyncio.to_thread(verifier.get_interactive_elements, filter_config)
-        )
+        screenshot_task = asyncio.create_task(asyncio.to_thread(verifier.capture_screenshot))
+        elements_task = asyncio.create_task(asyncio.to_thread(verifier.get_interactive_elements, filter_config))
 
         screenshot, elements = await asyncio.gather(screenshot_task, elements_task)
 
-        workspace_data = {
-            KEY_SCREENSHOT: screenshot if screenshot else "",
-            KEY_ELEMENTS: elements if elements else [],
-            KEY_SCREENSHOT_FAILED: not screenshot or screenshot == ""
+        workspace_data: Dict[str, Any] = {
+            KEY_SCREENSHOT: screenshot or "",
+            KEY_ELEMENTS: elements or [],
+            KEY_SCREENSHOT_FAILED: not screenshot,
         }
 
         if include_source:
-            try:
-                source_task = asyncio.create_task(
-                    asyncio.to_thread(verifier.capture_pagesource)
-                )
-                source = await source_task
-                workspace_data[KEY_SOURCE] = source if source else ""
-            except Exception as e:
-                internal_logger.warning(f"Failed to capture page source: {e}")
-                workspace_data[KEY_SOURCE] = ""
+            workspace_data[KEY_SOURCE] = await _capture_source_safe(verifier)
 
         return workspace_data
     except Exception as e:
         internal_logger.error(f"Error gathering workspace data: {e}")
-        return {
-            KEY_SCREENSHOT: "",
-            KEY_ELEMENTS: [],
-            KEY_SOURCE: "" if include_source else None,
-            KEY_SCREENSHOT_FAILED: True
-        }
+        return _empty_workspace_data(include_source)
 
 def _compute_workspace_hash(workspace_data: Dict[str, Any]) -> str:
     """

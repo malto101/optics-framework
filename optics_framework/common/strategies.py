@@ -412,20 +412,22 @@ class PagesourceStrategy:
     def __init__(self, element_source: ElementSourceInterface):
         self.element_source: ElementSourceInterface = element_source
 
-    def capture_pagesource(self) -> Optional[str]:
-        pagesource = self.element_source.get_page_source()
-        if pagesource is not None:
-            if isinstance(pagesource, str):
-                return pagesource
-            elif isinstance(pagesource, tuple) and len(pagesource) >= 1:
-                # Handle tuple case - return the first element (page source)
-                return str(pagesource[0])
-            # If it's an ndarray, convert to string (or handle as needed)
-            try:
-                return str(pagesource)
-            except Exception:
-                raise OpticsError(Code.E0403, message="Invalid pagesource captured: not a string or convertible")
-        raise OpticsError(Code.E0403, message="Invalid pagesource captured")
+    def capture_pagesource(self) -> Optional[Tuple[str, str]]:
+        """
+        Capture page source and timestamp from the element source.
+        Returns:
+            Optional[Tuple[str, str]]: (page_source, timestamp) or None
+        """
+        try:
+            result = self.element_source.get_page_source()
+            if result is None:
+                raise OpticsError(Code.E0403, message="Invalid pagesource captured")
+            page_source, timestamp = result
+            return (str(page_source), str(timestamp))
+        except OpticsError:
+            raise
+        except Exception as e:
+            raise OpticsError(Code.E0403, message=f"Invalid pagesource captured: {e}") from e
 
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> List[dict]:
         """Retrieve interactive elements from the element source."""
@@ -742,7 +744,7 @@ class StrategyManager:
             execution_logger.warning("No active screenshot stream to stop.")
             raise OpticsError(Code.E0301, message="No active screenshot stream to stop.")
 
-    def capture_pagesource(self) -> Optional[str]:
+    def capture_pagesource(self) -> Optional[Tuple[str, str]]:
         for strategy in self.pagesource_strategies:
             try:
                 return strategy.capture_pagesource()

@@ -84,9 +84,11 @@ class PlaywrightPageSource(ElementSourceInterface):
             "PlaywrightPageSource does not support screen capture."
         )
 
-    def get_page_source(self) -> str:
+    def get_page_source(self) -> Tuple[str, str]:
         """
-        Returns full DOM HTML and timestamp
+        Returns full DOM HTML and timestamp.
+        Returns:
+            Tuple[str, str]: (page_source, timestamp)
         """
         internal_logger.error("trying get_page_source ..............")
         page = self._require_page()
@@ -109,7 +111,7 @@ class PlaywrightPageSource(ElementSourceInterface):
         )
         internal_logger.debug("Timestamp: %s", timestamp)
 
-        return html
+        return html, str(timestamp)
 
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> List[Dict]:
         """
@@ -129,7 +131,7 @@ class PlaywrightPageSource(ElementSourceInterface):
             List of dictionaries with keys: text, bounds, xpath, extra
         """
         # Ensure page source is fetched and parsed
-        self.get_page_source()
+        self.get_page_source()  # Returns (html, timestamp); updates self.tree
 
         if self.tree is None:
             internal_logger.error("[PlaywrightPageSource] Tree is None, cannot extract elements")

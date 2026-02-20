@@ -40,12 +40,16 @@ class PlaywrightFindElement(ElementSourceInterface):
             "PlaywrightFindElement does not support capture()"
         )
 
-    def get_page_source(self) -> str:
+    def get_page_source(self) -> Tuple[str, str]:
         """
-        Returns current DOM HTML
+        Returns current DOM HTML and timestamp.
+        Returns:
+            Tuple[str, str]: (page_source, timestamp)
         """
         page = self._require_page()
-        return run_async(page.content())
+        html = run_async(page.content())
+        timestamp = utils.get_timestamp()
+        return str(html), str(timestamp)
 
     def get_interactive_elements(self, filter_config: Optional[List[str]] = None) -> List[Any]:
         """
