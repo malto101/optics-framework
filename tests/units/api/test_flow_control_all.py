@@ -23,7 +23,7 @@ class DummyApiCollection:
 class DummySession:
     def __init__(self):
         self.elements = ElementData()
-        self.modules = type('M', (), {'modules': {}, 'get_module_definition': lambda self, x: []})()
+        self.modules = type('M', (), {'modules': {}, 'get_module_definition': lambda self, x: self.modules.get(x)})()
         self.apis = ApiData()
         self.apis.collections = {}
 

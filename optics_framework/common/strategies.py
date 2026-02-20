@@ -664,7 +664,7 @@ class StrategyManager:
                 if type(s).__name__ != "TextElementStrategy"
             ]
         if not applicable_strategies:
-            raise OpticsError(Code.E0201, message="No elements found.")
+            raise OpticsError(Code.E0201, message=f"No strategies found for elements: {elements} with rule '{rule}'.")
 
         for idx, strategy in enumerate(applicable_strategies):
             internal_logger.debug(f"Trying strategy: {type(strategy).__name__} for elements: {elements}")
@@ -687,7 +687,7 @@ class StrategyManager:
 
         if last_exception:
             internal_logger.debug(f"assert_presence ended with last exception: {last_exception}")
-        raise OpticsError(Code.E0201, message="No elements found.")
+        raise OpticsError(Code.E0201, message=f"{elements} not found based on rule '{rule}'.")
 
     def _validate_rule(self, rule: str):
         """Validate the rule parameter."""

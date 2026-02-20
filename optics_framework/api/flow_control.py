@@ -264,7 +264,7 @@ class FlowControl:
                 return values
             # Then try JSON parsing
             try:
-                values = json.loads(iterable[0])
+                values = json.loads(iterable)
                 if not isinstance(values, list):
                     raise OpticsError(Code.E0403, message=f"Iterable '{iterable}' for variable '{variable}' must resolve to a list.")
                 return values
@@ -320,7 +320,7 @@ class FlowControl:
         internal_logger.debug(f"[_EVALUATE_CONDITIONS] pairs={pairs}, else_target={else_target}")
         for idx, (cond, target) in enumerate(pairs):
             cond_str = cond.strip()
-            execution_logger.info(f"[_EVALUATE_CONDITIONS] Evaluating condition: '{cond_str}' for target '{target}'")
+            execution_logger.info(f"[_EVALUATE_CONDITIONS] Evaluating condition: '{cond_str}'")
             if not cond_str:
                 continue
             if self._is_module_condition(cond_str):
@@ -332,7 +332,7 @@ class FlowControl:
                 if result is not None:
                     return result
         if else_target is not None:
-            internal_logger.debug(f"[_EVALUATE_CONDITIONS] No condition met. Executing ELSE target '{else_target}'.")
+            internal_logger.debug(f"[_EVALUATE_CONDITIONS] No condition met. Executing ELSE block module '{else_target}'.")
             return self.execute_module(else_target)
         internal_logger.debug("[_EVALUATE_CONDITIONS] No condition met and no ELSE target provided.")
         return None
@@ -346,37 +346,44 @@ class FlowControl:
         return self.modules.get_module_definition(actual_cond) is not None
 
     def _handle_module_condition(self, cond_str: str, target: str) -> Optional[List[Any]]:
-        """Handles evaluation and execution for module-based conditions."""
-        # Strip "!" prefix if present and determine if we need to invert the result
+        """Handles evaluation and execution for module-based conditions.
+        Condition is true if the condition module returns non-empty; then we return that result.
+        Condition is false if the condition module returns empty; then we run target and return its result.
+        If the condition module raises, that is treated as condition failure (invert logic applies).
+        """
         invert = cond_str.startswith("!")
         actual_cond = cond_str[1:].strip() if invert else cond_str
 
         try:
-            self.execute_module(actual_cond)
-            # Module executed successfully
-            if invert:
-                # If inverted, success means we should NOT execute target
-                execution_logger.debug(f"[_EVALUATE_CONDITIONS] Module '{actual_cond}' succeeded, but condition is inverted. Skipping target '{target}'.")
-                return None
-            # If not inverted, success means we should execute target
-            try:
-                return self.execute_module(target)
-            except Exception as e:
-                execution_logger.warning(f"[_EVALUATE_CONDITIONS] Target module '{target}' raised error: {e}.")
-                raise OpticsError(Code.E0401, message=f"Error executing target module '{target}': {e}", cause=e)
+            cond_result = self.execute_module(actual_cond)
         except Exception as e:
-            # Module execution failed
-            internal_logger.warning(f"[_EVALUATE_CONDITIONS] Module '{actual_cond}' raised error: {e}.")
+            # Condition module raised (only this try wraps condition; target failures never land here)
+            internal_logger.warning(f"[_EVALUATE_CONDITIONS] 'if' condition module '{actual_cond}' raised error: {e}.")
             if invert:
-                # If inverted, failure means we SHOULD execute target
                 internal_logger.debug(f"[_EVALUATE_CONDITIONS] Module '{actual_cond}' failed, but condition is inverted. Executing target '{target}'.")
                 try:
                     return self.execute_module(target)
                 except Exception as target_e:
                     internal_logger.warning(f"[_EVALUATE_CONDITIONS] Target module '{target}' raised error: {target_e}.")
-                    raise OpticsError(Code.E0401, message=f"Error executing target module '{target}': {target_e}", cause=target_e)
-            # If not inverted, failure means we should NOT execute target
+                    raise OpticsError(Code.E0401, message=f"Error executing 'then' block module '{target}': {target_e}", cause=target_e)
             return None
+
+        # Condition module returned (no exception). Truthiness is based on non-empty result.
+        cond_true = bool(cond_result)
+        if invert:
+            cond_true = not cond_true
+        if cond_true:
+            # Return condition module's result (do not run target)
+            execution_logger.info(f"[_EVALUATE_CONDITIONS] Module '{actual_cond}' result non-empty. Returning condition result (skipping target '{target}').")
+            return cond_result
+        # Condition false: run target and return its result (or None if target returns empty)
+        try:
+            execution_logger.info(f"[_EVALUATE_CONDITIONS] Executing 'then' block module '{target}' (condition '{actual_cond}' was empty/false).")
+            target_result = self.execute_module(target)
+            return target_result if target_result else None
+        except Exception as e:
+            execution_logger.warning(f"[_EVALUATE_CONDITIONS] Target module '{target}' raised error: {e}.")
+            raise OpticsError(Code.E0401, message=f"Error executing 'then' block module '{target}': {e}", cause=e)
 
     def _handle_expression_condition(self, cond_str: str, target: str) -> Optional[List[Any]]:
         """Handles evaluation and execution for expression-based conditions."""
