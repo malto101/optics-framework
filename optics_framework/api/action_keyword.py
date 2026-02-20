@@ -2,7 +2,7 @@ from functools import wraps
 import time
 import json
 from typing import Callable, Optional, Any, Tuple
-from optics_framework.common.logging_config import internal_logger, execution_logger
+from optics_framework.common.logging_config import internal_logger
 from optics_framework.common.optics_builder import OpticsBuilder
 from optics_framework.common.strategies import StrategyManager
 from optics_framework.common.base_factory import InstanceFallback
@@ -183,12 +183,12 @@ class ActionKeyword:
         """
         if isinstance(located, tuple):
             x, y = located
-            execution_logger.info(
+            internal_logger.info(
                 f"Pressing at coordinates ({x + int(offset_x)}, {y + int(offset_y)}) with offset ({offset_x}, {offset_y})")
             self.driver.press_coordinates(
                 x + int(offset_x), y + int(offset_y), event_name)
         else:
-            execution_logger.info(f"Pressing element '{element}'")
+            internal_logger.info(f"Pressing element '{element}'")
             self.driver.press_element(located, int(repeat), event_name)
 
     def press_by_percentage(self, percent_x: str, percent_y: str, repeat: str = "1", event_name: Optional[str] = None) -> None:
@@ -217,7 +217,7 @@ class ActionKeyword:
         """
         screenshot_np = self.strategy_manager.capture_screenshot()
         utils.save_screenshot(screenshot_np, "press_by_coordinates", output_dir=self.execution_dir)
-        execution_logger.info(f'Pressing by coordinates: ({coor_x}, {coor_y})')
+        internal_logger.info(f'Pressing by coordinates: ({coor_x}, {coor_y})')
         self.driver.press_coordinates(int(coor_x), int(coor_y), event_name)
 
 
@@ -233,13 +233,13 @@ class ActionKeyword:
             result = self.verifier.validate_screen(
                 element, timeout, rule="any")
         except Exception as e:
-            execution_logger.error(f"Error in detect_and_press: {e}")
+            internal_logger.error(f"Error in detect_and_press: {e}")
             result = False
         if result:
-            execution_logger.info(f'Element {element} detected. Performing Press ... ')
+            internal_logger.info(f'Element {element} detected. Performing Press ... ')
             self.press_element(element, event_name=event_name)
         else:
-            execution_logger.info(f'Element {element} not found. Press is not performed.')
+            internal_logger.info(f'Element {element} not found. Press is not performed.')
 
     @DeprecationWarning
     @with_self_healing
@@ -298,7 +298,7 @@ class ActionKeyword:
         """
         screenshot_np = self.strategy_manager.capture_screenshot()
         utils.save_screenshot(screenshot_np, "swipe", output_dir=self.execution_dir)
-        execution_logger.info(f'Swiping from ({coor_x}, {coor_y}) to the {direction} with length {swipe_length}')
+        internal_logger.info(f'Swiping from ({coor_x}, {coor_y}) to the {direction} with length {swipe_length}')
         self.driver.swipe(int(coor_x), int(coor_y), direction, int(swipe_length), event_name)
 
     @DeprecationWarning
@@ -310,7 +310,7 @@ class ActionKeyword:
         """
         screenshot_np = self.strategy_manager.capture_screenshot()
         utils.save_screenshot(screenshot_np, "swipe_seekbar_to_right_android", output_dir=self.execution_dir)
-        execution_logger.info(f'Swiping seekbar element: {element} to the right')
+        internal_logger.info(f'Swiping seekbar element: {element} to the right')
         self.driver.swipe_element(element, 'right', 50, event_name)
 
     def swipe_until_element_appears(self, element: str, direction: str, timeout: str, event_name: Optional[str] = None) -> None:
@@ -350,10 +350,10 @@ class ActionKeyword:
         """
         if isinstance(located, tuple):
             x, y = located
-            execution_logger.debug(f"Swiping from coordinates ({x}, {y})")
+            internal_logger.debug(f"Swiping from coordinates ({x}, {y})")
             self.driver.swipe(x, y, direction, int(swipe_length), event_name)
         else:
-            execution_logger.debug(f"Swiping from element '{element}'")
+            internal_logger.debug(f"Swiping from element '{element}'")
             self.driver.swipe_element(
                 located, direction, int(swipe_length), event_name)
 
@@ -366,7 +366,7 @@ class ActionKeyword:
         """
         screenshot_np = self.strategy_manager.capture_screenshot()
         utils.save_screenshot(screenshot_np, "scroll", output_dir=self.execution_dir)
-        execution_logger.info(f"Scrolling {direction} with event {event_name}")
+        internal_logger.info(f"Scrolling {direction} with event {event_name}")
         self.driver.scroll(direction, 1000, event_name)
 
     def scroll_until_element_appears(self, element: str, direction: str, timeout: str, event_name: Optional[str] = None) -> None:
@@ -406,10 +406,10 @@ class ActionKeyword:
         """
         if isinstance(located, tuple):
             x, y = located
-            execution_logger.debug(f"Swiping from coordinates ({x}, {y})")
+            internal_logger.debug(f"Swiping from coordinates ({x}, {y})")
             self.driver.swipe(x, y, direction, int(scroll_length), event_name)
         else:
-            execution_logger.debug(f"Swiping from element '{element}'")
+            internal_logger.debug(f"Swiping from element '{element}'")
             self.driver.swipe_element(
                 located, direction, int(scroll_length), event_name)
 
@@ -429,17 +429,17 @@ class ActionKeyword:
         :param event_name: The event triggering the input.
         """
 
-        special_key = utils.parse_special_key(text)
-        if special_key:
+        special_key = str(utils.parse_special_key(text))
+        if special_key != "None":
             text = special_key
 
         if isinstance(located, tuple):
             x, y = located
-            execution_logger.debug(f"Entering text '{text}' at coordinates ({x}, {y})")
+            internal_logger.debug(f"Entering text '{text}' at coordinates ({x}, {y})")
             self.driver.press_coordinates(x, y, event_name=event_name)
             self.driver.enter_text(text, event_name)
         else:
-            execution_logger.debug(f"Entering text '{text}' into element '{element}'")
+            internal_logger.debug(f"Entering text '{text}' into element '{element}'")
             self.driver.enter_text_element(located, text, event_name)
 
     def enter_text_direct(self, text: str, event_name: Optional[str] = None) -> None:
@@ -453,8 +453,8 @@ class ActionKeyword:
             screenshot_np = self.strategy_manager.capture_screenshot()
             utils.save_screenshot(screenshot_np, "enter_text_keyboard", output_dir=self.execution_dir)
         except Exception as e:
-            execution_logger.error(f"Error capturing screenshot: {e}")
-        execution_logger.info(f'Entering text directly: {text}')
+            internal_logger.error(f"Error capturing screenshot: {e}")
+        internal_logger.info(f'Entering text directly: {text}')
         self.driver.enter_text(text, event_name)
 
     def enter_text_using_keyboard(self, text_input: str, event_name: Optional[str] = None) -> None:
@@ -468,15 +468,15 @@ class ActionKeyword:
         :param event_name: Optional event label for logging.
         """
 
-        special_key = utils.parse_special_key(text_input)
-        if special_key:
+        special_key = str(utils.parse_special_key(text_input))
+        if special_key != "None":
             text_input = special_key
         try:
             screenshot_np = self.strategy_manager.capture_screenshot()
             utils.save_screenshot(screenshot_np, "enter_text_using_keyboard", output_dir=self.execution_dir)
         except Exception as e:
-            execution_logger.error(f"Error capturing screenshot: {e}")
-        execution_logger.info(f'Entering text using keyboard: {text_input}')
+            internal_logger.error(f"Error capturing screenshot: {e}")
+        internal_logger.info(f'Entering text using keyboard: {text_input}')
         self.driver.enter_text_using_keyboard(text_input, event_name)
 
     @with_self_healing
@@ -495,13 +495,13 @@ class ActionKeyword:
         """
         if isinstance(located, tuple):
             x, y = located
-            execution_logger.debug(f"Entering number '{number}' at coordinates ({x}, {y})")
+            internal_logger.debug(f"Entering number '{number}' at coordinates ({x}, {y})")
             self.driver.press_coordinates(x, y, event_name=event_name)
             self.driver.enter_text(str(number), event_name)
         elif isinstance(located, str):
             self.driver.enter_text_element(located, str(number), event_name)
         else:
-            execution_logger.error(
+            internal_logger.error(
                 "Element location %s is not provided correctly for entering number.", element)
             raise ValueError(
                 f"Element location {element} is not provided correctly for entering number."
@@ -518,9 +518,9 @@ class ActionKeyword:
             screenshot_np = self.strategy_manager.capture_screenshot()
             utils.save_screenshot(screenshot_np, "press_keycode", output_dir=self.execution_dir)
         except Exception as e:
-            execution_logger.error(f"Error capturing screenshot: {e}")
+            internal_logger.error(f"Error capturing screenshot: {e}")
 
-        execution_logger.info(f"Pressing keycode: {keycode}")
+        internal_logger.info(f"Pressing keycode: {keycode}")
         self.driver.press_keycode(keycode, event_name)
 
 
@@ -539,12 +539,12 @@ class ActionKeyword:
         """
         if isinstance(located, tuple):
             x, y = located
-            execution_logger.debug(f"Clearing text at coordinates ({x}, {y})")
+            internal_logger.debug(f"Clearing text at coordinates ({x}, {y})")
             self.driver.press_coordinates(
                 x, y, event_name=event_name)
             self.driver.clear_text(event_name)
         else:
-            execution_logger.debug(f"Clearing text from element '{element}'")
+            internal_logger.debug(f"Clearing text from element '{element}'")
             self.driver.clear_text_element(located, event_name)
 
     def get_text(self, element: str) -> Optional[str]:
@@ -615,9 +615,9 @@ class ActionKeyword:
             else:
                 args = [args_value] if not isinstance(args_value, list) else args_value
 
-            execution_logger.debug(f'Parsed JSON: script="{script}", args={args}')
+            internal_logger.debug(f'Parsed JSON: script="{script}", args={args}')
         except json.JSONDecodeError as e:
-            execution_logger.debug(f'Not valid JSON, using as script directly: {e}')
+            internal_logger.debug(f'Not valid JSON, using as script directly: {e}')
 
         return script, args
 
@@ -641,14 +641,14 @@ class ActionKeyword:
             screenshot_np = self.strategy_manager.capture_screenshot()
             utils.save_screenshot(screenshot_np, "execute_script", output_dir=self.execution_dir)
         except Exception as e:
-            execution_logger.error(f"Error capturing screenshot: {e}")
+            internal_logger.error(f"Error capturing screenshot: {e}")
 
         script, args = self._parse_script_and_args(script_or_json)
 
-        execution_logger.info(f'Executing script: {script[:100]}...')  # Log first 100 chars
+        internal_logger.info(f'Executing script: {script[:100]}...')  # Log first 100 chars
         if args:
             result = self.driver.execute_script(script, *args, event_name=event_name)
         else:
             result = self.driver.execute_script(script, event_name=event_name)
-        execution_logger.debug(f'Script execution result: {result}')
+        internal_logger.debug(f'Script execution result: {result}')
         return result

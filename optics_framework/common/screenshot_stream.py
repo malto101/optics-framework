@@ -4,7 +4,7 @@ import threading
 import queue
 from skimage.metrics import structural_similarity as ssim
 from optics_framework.common import utils
-from optics_framework.common.logging_config import internal_logger, execution_logger
+from optics_framework.common.logging_config import internal_logger
 
 class ScreenshotStream:
     def __init__(self, capture_screenshot_callable, max_queue_size=100, debug_folder=None):
@@ -37,7 +37,7 @@ class ScreenshotStream:
             timestamp = utils.get_timestamp()
             try:
                 frame = self.capture_screenshot()
-                execution_logger.debug(f"Captured screenshot at {timestamp} as a stream")
+                internal_logger.debug(f"Captured screenshot at {timestamp} as a stream")
             except Exception as e:
                 internal_logger.debug(f"ERROR: Failed to capture screenshot: {e}")
                 continue
@@ -69,7 +69,7 @@ class ScreenshotStream:
             similarity = ssim(gray_last_frame, gray_frame, data_range=gray_frame.max() - gray_frame.min())
 
             if similarity >= 0.75:
-                execution_logger.debug(f"Skipping duplicate frame at {timestamp} (SSIM: {similarity:.4f})")
+                internal_logger.debug(f"Skipping duplicate frame at {timestamp} (SSIM: {similarity:.4f})")
                 return last_processed_frame
 
         # Frame is unique, add to filtered queue
@@ -122,7 +122,7 @@ class ScreenshotStream:
         if self.stop_event.is_set():
             self.stop_event.clear()
 
-        execution_logger.debug("Starting screenshot capture threads.")
+        internal_logger.debug("Starting screenshot capture threads.")
 
         self.capture_thread = threading.Thread(target=self.capture_stream, args=(timeout,), daemon=True)
         self.capture_thread.start()
@@ -130,7 +130,7 @@ class ScreenshotStream:
         if deduplication:
             self.dedup_thread = threading.Thread(target=self.process_screenshot_queue, daemon=True)
             self.dedup_thread.start()
-            execution_logger.debug("Started screenshot deduplication thread.")
+            internal_logger.debug("Started screenshot deduplication thread.")
 
     def stop_capture(self, wait_for_threads=True, timeout=5):
         """
@@ -140,7 +140,7 @@ class ScreenshotStream:
             wait_for_threads (bool): Whether to wait for threads to finish
             timeout (int): Maximum time to wait for threads to finish
         """
-        execution_logger.debug("Stopping screenshot capture...")
+        internal_logger.debug("Stopping screenshot capture...")
         self.stop_event.set()
 
         if wait_for_threads:
@@ -159,7 +159,7 @@ class ScreenshotStream:
                 else:
                     internal_logger.debug(f"{thread_name} thread stopped successfully")
 
-        execution_logger.debug("Screenshot capture stopped.")
+        internal_logger.debug("Screenshot capture stopped.")
 
     def get_latest_screenshot(self, wait_time=1):
         """

@@ -4,7 +4,7 @@ from playwright.async_api import async_playwright, Page, TimeoutError as Playwri
 from optics_framework.common.driver_interface import DriverInterface
 from optics_framework.common.error import OpticsError, Code
 from optics_framework.common.eventSDK import EventSDK
-from optics_framework.common.logging_config import internal_logger, execution_logger
+from optics_framework.common.logging_config import internal_logger
 from optics_framework.common.async_utils import run_async
 from optics_framework.common import utils
 
@@ -48,7 +48,7 @@ class Playwright(DriverInterface):
             self.page = await self._context.new_page()
 
             if app_identifier:
-                execution_logger.info("[Playwright] Navigating to %s", app_identifier)
+                internal_logger.debug("[Playwright] Navigating to %s", app_identifier)
                 await self._navigate_to(app_identifier)
 
             if event_name and self.event_sdk:
@@ -79,12 +79,12 @@ class Playwright(DriverInterface):
                 await self._launch_app_async(None, event_name)
 
             # Create a new page (tab) in the existing context
-            internal_logger.info("[Playwright] Creating new tab for %s", app_name)
+            internal_logger.debug("[Playwright] Creating new tab for %s", app_name)
             self.page = await self._context.new_page()
 
             # Navigate to the new URL
             if app_name:
-                execution_logger.info("[Playwright] Navigating to %s", app_name)
+                internal_logger.debug("[Playwright] Navigating to %s", app_name)
                 await self._navigate_to(app_name)
 
             if event_name and self.event_sdk:
@@ -434,7 +434,7 @@ class Playwright(DriverInterface):
                 # Multiple args - pass as a list
                 result = await self.page.evaluate(script, list(args))
 
-            execution_logger.debug(f"[Playwright] Executed script: {script[:100]}...")  # Log first 100 chars
+            internal_logger.debug(f"[Playwright] Executed script: {script[:100]}...")  # Log first 100 chars
             internal_logger.debug(f"[Playwright] Script execution result: {result}")
 
             return result
