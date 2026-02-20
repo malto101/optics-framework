@@ -146,6 +146,7 @@ class FlowControl:
         """Executes a module's keywords using the session's keyword_map."""
         module_def = self._get_validated_module_def(module_name)
         results = []
+        execution_logger.info(f"[EXECUTE_MODULE] Executing module: {module_name}")
         for keyword, params in module_def:
             results.append(self._execute_single_keyword(module_name, keyword, params))
         return results
@@ -289,6 +290,7 @@ class FlowControl:
             raise OpticsError(Code.E0403, message="No condition-target pairs provided.")
         pairs, else_target = self._split_condition_args(args)
         internal_logger.debug(f"[CONDITION] Parsed pairs={pairs}, else_target={else_target}")
+        execution_logger.debug(f"[CONDITION] Evaluating conditions: {pairs}, else_target={else_target}")
         return self._evaluate_conditions(pairs, else_target)
 
     def _split_condition_args(
@@ -318,7 +320,7 @@ class FlowControl:
         internal_logger.debug(f"[_EVALUATE_CONDITIONS] pairs={pairs}, else_target={else_target}")
         for idx, (cond, target) in enumerate(pairs):
             cond_str = cond.strip()
-            internal_logger.debug(f"[_EVALUATE_CONDITIONS] Evaluating condition: '{cond_str}' for target '{target}'")
+            execution_logger.info(f"[_EVALUATE_CONDITIONS] Evaluating condition: '{cond_str}' for target '{target}'")
             if not cond_str:
                 continue
             if self._is_module_condition(cond_str):
@@ -354,13 +356,13 @@ class FlowControl:
             # Module executed successfully
             if invert:
                 # If inverted, success means we should NOT execute target
-                internal_logger.debug(f"[_EVALUATE_CONDITIONS] Module '{actual_cond}' succeeded, but condition is inverted. Skipping target '{target}'.")
+                execution_logger.debug(f"[_EVALUATE_CONDITIONS] Module '{actual_cond}' succeeded, but condition is inverted. Skipping target '{target}'.")
                 return None
             # If not inverted, success means we should execute target
             try:
                 return self.execute_module(target)
             except Exception as e:
-                internal_logger.warning(f"[_EVALUATE_CONDITIONS] Target module '{target}' raised error: {e}.")
+                execution_logger.warning(f"[_EVALUATE_CONDITIONS] Target module '{target}' raised error: {e}.")
                 raise OpticsError(Code.E0401, message=f"Error executing target module '{target}': {e}", cause=e)
         except Exception as e:
             # Module execution failed

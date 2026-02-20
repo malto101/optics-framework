@@ -168,7 +168,7 @@ class TestRunner(Runner):
             test_state[current_test.name] = test_result
             current_test = current_test.next
         self.result_printer.test_state = test_state
-        execution_logger.debug(
+        internal_logger.debug(
             "Initialized test_state: %s with %d modules",
             list(test_state.keys()),
             sum(len(m.modules) for m in test_state.values())
@@ -320,7 +320,7 @@ class TestRunner(Runner):
         keyword_result = self._find_result(
             test_case_result.name, module_node.name, keyword_node.id
         )
-        execution_logger.debug(
+        internal_logger.debug(
             "Executing keyword: %s (id: %s)", keyword_node.name, keyword_node.id
         )
         start_time = time.time()

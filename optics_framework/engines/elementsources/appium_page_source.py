@@ -3,7 +3,7 @@ from typing import Optional, Any, Tuple, List
 from lxml import etree  # type: ignore
 from appium.webdriver.webdriver import WebDriver
 from appium.webdriver.common.appiumby import AppiumBy
-from optics_framework.common.logging_config import internal_logger
+from optics_framework.common.logging_config import internal_logger, execution_logger
 from optics_framework.common import utils
 from optics_framework.common.elementsource_interface import ElementSourceInterface
 
@@ -106,6 +106,7 @@ class AppiumPageSource(ElementSourceInterface):
             else:
                 xpath = self.find_xpath_from_text(element)
             try:
+                execution_logger.debug(f"Finding element by text: {element} with xpath: {xpath}")
                 element_obj = driver.find_element(AppiumBy.XPATH, xpath)
                 return element_obj
             except Exception:

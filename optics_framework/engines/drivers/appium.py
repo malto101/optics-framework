@@ -12,7 +12,7 @@ from selenium.webdriver.common.actions.action_builder import ActionBuilder  # ty
 from selenium.webdriver.common.actions.pointer_input import PointerInput  # type: ignore
 from selenium.webdriver.common.actions import interaction  # type: ignore
 from optics_framework.common.driver_interface import DriverInterface
-from optics_framework.common.logging_config import internal_logger, execution_logger
+from optics_framework.common.logging_config import internal_logger
 from optics_framework.common import utils
 from optics_framework.common.utils import SpecialKey
 from optics_framework.common.eventSDK import EventSDK
@@ -321,7 +321,7 @@ class Appium(DriverInterface):
 
         try:
             result = self._execute_script_with_args(driver, script, normalized_args)
-            execution_logger.debug(f"Executed script: {script[:100]}...")  # Log first 100 chars
+            internal_logger.debug(f"Executed script: {script[:100]}...")  # Log first 100 chars
             internal_logger.debug(f"Script execution result: {result}")
             return result
         except Exception as e:
@@ -548,7 +548,7 @@ class Appium(DriverInterface):
                 app_activity=app_activity,
                 event_name=event_name,
             )
-        execution_logger.debug(f"Launched application with event: {event_name}")
+        internal_logger.debug(f"Launched application with event: {event_name}")
         return session_id if session_id else None
 
 
@@ -620,14 +620,14 @@ class Appium(DriverInterface):
             return
         timestamp = self.event_sdk.get_current_time_for_events()
         try:
-            execution_logger.debug(
+            internal_logger.debug(
                 f"Swiping from ({x_coor}, {y_coor}) to ({end_x}, {end_y})"
             )
             driver.swipe(x_coor, y_coor, end_x, end_y, 1000)
             if event_name:
                 self.event_sdk.capture_event_with_time_input(event_name, timestamp)
         except Exception as e:
-            execution_logger.debug(
+            internal_logger.debug(
                 f"Failed to swipe from ({x_coor}, {y_coor}) to ({end_x}, {end_y}): {e}"
             )
 
@@ -685,7 +685,7 @@ class Appium(DriverInterface):
             return
         timestamp = self.event_sdk.get_current_time_for_events()
         try:
-            execution_logger.debug(
+            internal_logger.debug(
                 f"Swiping (W3C Action) from ({start_x}, {start_y}) to ({end_x}, {end_y})"
             )
             try:
@@ -703,11 +703,11 @@ class Appium(DriverInterface):
                     self.event_sdk.capture_event_with_time_input(event_name, timestamp)
             except Exception as w3c_e:
                 # Fallback: log and continue (keeps previous behavior of not raising)
-                execution_logger.debug(
+                internal_logger.debug(
                     f"W3C Action swipe failed from ({start_x}, {start_y}) to ({end_x}, {end_y}): {w3c_e}"
                 )
         except Exception as e:
-            execution_logger.debug(
+            internal_logger.debug(
                 f"Failed to perform TouchAction swipe from ({start_x}, {start_y}) to ({end_x}, {end_y}): {e}"
             )
 
@@ -744,7 +744,7 @@ class Appium(DriverInterface):
             if event_name:
                 self.event_sdk.capture_event_with_time_input(event_name, timestamp)
         except Exception as e:
-            execution_logger.debug(f"Failed to scroll {direction}: {e}")
+            internal_logger.debug(f"Failed to scroll {direction}: {e}")
 
     def enter_text_element(self, element: Any, text: Union[str, SpecialKey], event_name: Optional[str] = None) -> None:
         if event_name:
@@ -756,21 +756,21 @@ class Appium(DriverInterface):
                 internal_logger.debug(
                     f"Pressing Detected SpecialKey in element: {text}. Keycode: {keycode}"
                 )
-                execution_logger.debug(f"Pressing SpecialKey in element: {text}")
+                internal_logger.debug(f"Pressing SpecialKey in element: {text}")
                 driver = self._require_driver()
                 driver.press_keycode(keycode)
             else:
                 internal_logger.warning(f"Unknown special key in element: {text}")
-                execution_logger.debug(f"Unknown special key in element, treating as text: {text}")
+                internal_logger.debug(f"Unknown special key in element, treating as text: {text}")
                 element.send_keys(utils.strip_sensitive_prefix(str(text)))
         else:
-            execution_logger.debug(f"Entering text '{text}' into element: {element}")
+            internal_logger.debug(f"Entering text '{text}' into element: {element}")
             element.send_keys(utils.strip_sensitive_prefix(str(text)))
 
     def clear_text_element(self, element: Any, event_name: Optional[str] = None) -> None:
         if event_name:
             self.event_sdk.capture_event(event_name)
-        execution_logger.debug(f"Clearing text in element: {element}")
+        internal_logger.debug(f"Clearing text in element: {element}")
         element.clear()
 
     def enter_text(self, text: Union[str, SpecialKey], event_name: Optional[str] = None) -> None:
@@ -784,15 +784,15 @@ class Appium(DriverInterface):
                 internal_logger.debug(
                     f"Pressing Detected SpecialKey: {text}. Keycode: {keycode}"
                 )
-                execution_logger.debug(f"Pressing SpecialKey: {text}")
+                internal_logger.debug(f"Pressing SpecialKey: {text}")
                 driver.press_keycode(keycode)
             else:
                 internal_logger.warning(f"Unknown special key: {text}")
-                execution_logger.debug(f"Unknown special key, treating as text: {text}")
+                internal_logger.debug(f"Unknown special key, treating as text: {text}")
                 text_to_send = utils.strip_sensitive_prefix(str(text))
                 driver.execute_script(self.MOBILE_TYPE_COMMAND, {"text": text_to_send})
         else:
-            execution_logger.debug(f"Entering text: {text}")
+            internal_logger.debug(f"Entering text: {text}")
             text_to_send = utils.strip_sensitive_prefix(str(text))
             driver.execute_script(self.MOBILE_TYPE_COMMAND, {"text": text_to_send})
 
@@ -800,14 +800,14 @@ class Appium(DriverInterface):
         driver = self._require_driver()
         if event_name:
             self.event_sdk.capture_event(event_name)
-        execution_logger.debug("Clearing text input")
+        internal_logger.debug("Clearing text input")
         driver.execute_script(self.MOBILE_CLEAR)
 
     def press_keycode(self, keycode: str, event_name: Optional[str] = None) -> None:
         driver = self._require_driver()
         if event_name:
             self.event_sdk.capture_event(event_name)
-        execution_logger.debug(f"Pressing keycode: {keycode}")
+        internal_logger.debug(f"Pressing keycode: {keycode}")
         driver.press_keycode(int(utils.strip_sensitive_prefix(keycode)))
 
     def _handle_special_key_keyboard_input(self, driver: WebDriver, text: SpecialKey) -> None:
@@ -815,18 +815,18 @@ class Appium(DriverInterface):
         keycode = self.KEYCODE_MAP.get(text)
         if keycode is not None:
             internal_logger.debug(f"Pressing Detected SpecialKey: {text}. Keycode: {keycode}")
-            execution_logger.debug(f"Pressing SpecialKey: {text}")
+            internal_logger.debug(f"Pressing SpecialKey: {text}")
             driver.press_keycode(keycode)
             return
         internal_logger.warning(f"Unknown special key: {text}")
-        execution_logger.debug(f"Unknown special key, treating as text: {text}")
+        internal_logger.debug(f"Unknown special key, treating as text: {text}")
         driver.execute_script(
             self.MOBILE_TYPE_COMMAND, {"text": utils.strip_sensitive_prefix(str(text))}
         )
 
     def _handle_string_keyboard_input(self, driver: WebDriver, text_value: str) -> None:
         """Type a string character-by-character, flushing unmapped chars via mobile:type."""
-        execution_logger.debug(f"Entering text using keyboard (per-char): {text_value}")
+        internal_logger.debug(f"Entering text using keyboard (per-char): {text_value}")
         buffer: List[str] = []
         for ch in text_value:
             keycode = self.get_char_as_keycode(ch)
@@ -842,7 +842,7 @@ class Appium(DriverInterface):
         if not buffer:
             return
         segment = "".join(buffer)
-        execution_logger.debug(f"Flushing unmapped segment via script: '{segment}'")
+        internal_logger.debug(f"Flushing unmapped segment via script: '{segment}'")
         driver.execute_script(
             self.MOBILE_TYPE_COMMAND, {"text": utils.strip_sensitive_prefix(segment)}
         )
@@ -850,7 +850,7 @@ class Appium(DriverInterface):
 
     def _press_keycode_or_type_char(self, driver: WebDriver, ch: str, keycode: int) -> None:
         """Press keycode for char, or fall back to mobile:type on failure."""
-        execution_logger.debug(f"Pressing keycode for char '{ch}': {keycode}")
+        internal_logger.debug(f"Pressing keycode for char '{ch}': {keycode}")
         try:
             driver.press_keycode(int(keycode))
         except Exception:
@@ -956,7 +956,7 @@ class Appium(DriverInterface):
                 raise OpticsError(Code.E0401, message=f"Error occurred while clicking on element: {e}", cause=e) from e
         if event_name and timestamp is not None:
             self.event_sdk.capture_event_with_time_input(event_name, timestamp)
-            execution_logger.debug("Clicked on element: %s at %s", element, timestamp)
+            internal_logger.debug("Clicked on element: %s at %s", element, timestamp)
 
     def press_coordinates(self, coor_x: int, coor_y: int, event_name: Optional[str] = None) -> None:
         """
@@ -969,7 +969,7 @@ class Appium(DriverInterface):
             event_name (str | None): The name of the event to trigger, if any.
         """
         coor_x, coor_y = int(coor_x), int(coor_y)
-        execution_logger.debug(f"Pressing at coordinates: ({coor_x}, {coor_y})")
+        internal_logger.debug(f"Pressing at coordinates: ({coor_x}, {coor_y})")
         self.tap_at_coordinates(coor_x, coor_y, event_name)
 
     def press_percentage_coordinates(
@@ -985,7 +985,7 @@ class Appium(DriverInterface):
         x = int(window_size["width"] * percentage_x / 100)
         y = int(window_size["height"] * percentage_y / 100)
         for _ in range(repeat):
-            execution_logger.debug(
+            internal_logger.debug(
                 f"Pressing at percentage coordinates: ({percentage_x}%, {percentage_y}%)"
             )
             self.press_coordinates(x, y, event_name)

@@ -606,11 +606,11 @@ class StrategyManager:
 
     def locate(self, element: str, aoi_x=None, aoi_y=None, aoi_width=None, aoi_height=None, index: int = 0) -> Generator[LocateResult, None, None]:
         element_type = utils.determine_element_type(element)
-        execution_logger.info(f"Locating element: {element} of type: {element_type}...")
+        internal_logger.info(f"Locating element: {element} of type: {element_type}...")
         use_aoi = self._validate_aoi(aoi_x, aoi_y, aoi_width, aoi_height)
 
         for strategy in self.locator_strategies:
-            internal_logger.debug(f"Trying strategy: {type(strategy).__name__} for element: {element}")
+            execution_logger.debug(f"Trying strategy: {type(strategy).__name__} for element: {element}")
             locate_result = self._try_strategy_locate(
                 strategy, element, element_type, use_aoi, aoi_x, aoi_y, aoi_width, aoi_height, index
             )
@@ -707,7 +707,7 @@ class StrategyManager:
 
     def capture_screenshot(self) -> Optional[np.ndarray]:
         """Capture a screenshot using the available strategies."""
-        execution_logger.info("Capturing screenshot using available strategies.")
+        execution_logger.debug("Capturing screenshot using available strategies.")
         for strategy in self.screenshot_strategies:
             try:
                 img = strategy.capture()
@@ -720,7 +720,7 @@ class StrategyManager:
 
     def capture_screenshot_stream(self, timeout: int = 30):
         """Capture a screenshot stream using the available strategies."""
-        execution_logger.info("Starting screenshot stream with available strategies.")
+        execution_logger.debug("Starting screenshot stream with available strategies.")
         for strategy in self.screenshot_strategies:
             try:
                 self.screenshot_stream = ScreenshotStream(strategy.capture, max_queue_size=10)
@@ -736,7 +736,7 @@ class StrategyManager:
     def stop_screenshot_stream(self):
         if self.screenshot_stream:
             self.screenshot_stream.stop_capture()
-            execution_logger.info("Screenshot stream stopped successfully.")
+            execution_logger.debug("Screenshot stream stopped successfully.")
             self.screenshot_stream = None
         else:
             execution_logger.warning("No active screenshot stream to stop.")

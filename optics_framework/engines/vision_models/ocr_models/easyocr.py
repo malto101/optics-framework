@@ -3,7 +3,7 @@ import easyocr
 import cv2
 from optics_framework.common.text_interface import TextInterface
 from optics_framework.common import utils
-from optics_framework.common.logging_config import internal_logger, execution_logger
+from optics_framework.common.logging_config import internal_logger
 
 
 class EasyOCRHelper(TextInterface):
@@ -126,7 +126,7 @@ class EasyOCRHelper(TextInterface):
             ):
                 results.append((item[0], item[1], item[2]))
         detected_text = ' '.join(result[1] for result in results)
-        execution_logger.info(f"Detected texts using easyocr: {detected_text}")
+        internal_logger.debug(f"Detected texts using easyocr: {detected_text}")
         return detected_text, results
 
     def element_exist(self, input_data, reference_data):
